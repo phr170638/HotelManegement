@@ -1,0 +1,37 @@
+# Maven
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+*.class
+*.jar
+*.war
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env & Logs
+.env
+.env.local
+*.log
+logs/
+
+# Spring Boot
+application-local.yml
+
+# Build output
+hotel-web/dist/

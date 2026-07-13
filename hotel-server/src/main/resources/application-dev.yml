@@ -1,0 +1,46 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/hotel_db?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    username: root
+    password: 1234
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  redis:
+    host: localhost
+    port: 6379
+    password:
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  global-config:
+    db-config:
+      id-type: auto
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /api-docs
+
+# JWT 配置
+jwt:
+  secret: hotel-management-system-jwt-secret-key-2026-min-256-bits-long-enough
+  expiration: 86400000
+
+# 支付宝沙箱配置 (TODO: 替换为真实配置)
+alipay:
+  app-id: your_app_id
+  private-key: your_private_key
+  alipay-public-key: your_alipay_public_key
+  gateway-url: https://openapi.alipaydev.com/gateway.do
+  notify-url: http://localhost:8080/api/order/pay-notify
+  return-url: http://localhost:5173/order/result

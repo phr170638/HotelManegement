@@ -1,0 +1,255 @@
+package com.hotel.module.resource.service.impl;
+
+import cn.hutool.core.bean.BeanUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.hotel.common.exception.BusinessException;
+import com.hotel.common.result.PageResult;
+import com.hotel.module.resource.dto.HotelSaveRequest;
+import com.hotel.module.resource.dto.RoomSaveRequest;
+import com.hotel.module.resource.entity.*;
+import com.hotel.module.resource.mapper.*;
+import com.hotel.module.resource.service.ResourceService;
+import com.hotel.module.resource.vo.HotelVO;
+import com.hotel.module.resource.vo.RoomVO;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class ResourceServiceImpl implements ResourceService {
+
+    private final CountryMapper countryMapper;
+    private final CityMapper cityMapper;
+    private final HotelMapper hotelMapper;
+    private final HotelImageMapper hotelImageMapper;
+    private final HotelFacilityMapper hotelFacilityMapper;
+    private final RoomMapper roomMapper;
+    private final RoomImageMapper roomImageMapper;
+    private final RoomFacilityMapper roomFacilityMapper;
+    private final BedTypeMapper bedTypeMapper;
+    private final BreakfastMapper breakfastMapper;
+
+    // ========== 国家 ==========
+
+    @Override
+    public PageResult<Country> listCountries(Integer page, Integer size, String keyword) {
+        LambdaQueryWrapper<Country> wrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(keyword)) {
+            wrapper.like(Country::getNameCn, keyword).or().like(Country::getNameEn, keyword);
+        }
+        IPage<Country> result = countryMapper.selectPage(new Page<>(page, size), wrapper);
+        return PageResult.of(result);
+    }
+
+    @Override
+    public Country getCountry(Long id) {
+        return countryMapper.selectById(id);
+    }
+
+    @Override
+    public void saveCountry(Country country) {
+        countryMapper.insert(country);
+    }
+
+    @Override
+    public void updateCountry(Country country) {
+        countryMapper.updateById(country);
+    }
+
+    @Override
+    public void deleteCountry(Long id) {
+        countryMapper.deleteById(id);
+    }
+
+    // ========== 城市 ==========
+
+    @Override
+    public PageResult<City> listCities(Integer page, Integer size, Long countryId, String keyword) {
+        LambdaQueryWrapper<City> wrapper = new LambdaQueryWrapper<>();
+        if (countryId != null) wrapper.eq(City::getCountryId, countryId);
+        if (StringUtils.hasText(keyword)) wrapper.like(City::getNameCn, keyword);
+        IPage<City> result = cityMapper.selectPage(new Page<>(page, size), wrapper);
+        return PageResult.of(result);
+    }
+
+    @Override
+    public List<City> listHotCities() {
+        return cityMapper.selectHotCities();
+    }
+
+    @Override
+    public void saveCity(City city) { cityMapper.insert(city); }
+
+    @Override
+    public void updateCity(City city) { cityMapper.updateById(city); }
+
+    @Override
+    public void deleteCity(Long id) { cityMapper.deleteById(id); }
+
+    // ========== 酒店 ==========
+
+    @Override
+    public PageResult<HotelVO> listHotels(Integer page, Integer size, Long cityId, String keyword, Integer starLevel) {
+        LambdaQueryWrapper<Hotel> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Hotel::getStatus, 1);
+        if (cityId != null) wrapper.eq(Hotel::getCityId, cityId);
+        if (starLevel != null) wrapper.eq(Hotel::getStarLevel, starLevel);
+        if (StringUtils.hasText(keyword)) wrapper.like(Hotel::getNameCn, keyword);
+        wrapper.orderByDesc(Hotel::getScore);
+
+        IPage<Hotel> result = hotelMapper.selectPage(new Page<>(page, size), wrapper);
+        List<HotelVO> records = result.getRecords().stream().map(h -> {
+            HotelVO vo = new HotelVO();
+            BeanUtil.copyProperties(h, vo);
+            return vo;
+        }).toList();
+        return new PageResult<>(records, result.getTotal(), (int) result.getCurrent(), (int) result.getSize());
+    }
+
+    @Override
+    public HotelVO getHotelDetail(Long id) {
+        Hotel hotel = hotelMapper.selectById(id);
+        if (hotel == null) throw new BusinessException(404, "酒店不存在");
+
+        HotelVO vo = new HotelVO();
+        BeanUtil.copyProperties(hotel, vo);
+
+        // 城市名
+        City city = cityMapper.selectById(hotel.getCityId());
+        if (city != null) vo.setCityName(city.getNameCn());
+
+        // 图片
+        List<HotelImage> images = hotelImageMapper.selectList(
+                new LambdaQueryWrapper<HotelImage>().eq(HotelImage::getHotelId, id).orderByAsc(HotelImage::getSortOrder));
+        vo.setImages(images.stream().map(i -> {
+            HotelVO.ImageVO iv = new HotelVO.ImageVO();
+            BeanUtil.copyProperties(i, iv);
+            return iv;
+        }).toList());
+
+        // 设施
+        List<HotelFacility> facilities = hotelFacilityMapper.selectList(
+                new LambdaQueryWrapper<HotelFacility>().eq(HotelFacility::getHotelId, id));
+        vo.setFacilities(facilities.stream().map(HotelFacility::getName).toList());
+
+        // 房型
+        vo.setRooms(listRoomsByHotelId(id));
+
+        return vo;
+    }
+
+    @Override
+    @Transactional
+    public void saveHotel(HotelSaveRequest req) {
+        Hotel hotel = new Hotel();
+        BeanUtil.copyProperties(req, hotel);
+        hotel.setStatus(1);
+        hotel.setScore(java.math.BigDecimal.ZERO);
+        hotelMapper.insert(hotel);
+
+        // 保存图片
+        if (req.getImageUrls() != null) {
+            for (int i = 0; i < req.getImageUrls().size(); i++) {
+                HotelImage img = new HotelImage();
+                img.setHotelId(hotel.getId());
+                img.setUrl(req.getImageUrls().get(i));
+                img.setType(i == 0 ? 1 : 4);
+                img.setSortOrder(i);
+                hotelImageMapper.insert(img);
+            }
+        }
+
+        // 保存设施
+        if (req.getFacilities() != null) {
+            for (String name : req.getFacilities()) {
+                HotelFacility facility = new HotelFacility();
+                facility.setHotelId(hotel.getId());
+                facility.setName(name);
+                hotelFacilityMapper.insert(facility);
+            }
+        }
+    }
+
+    @Override
+    public void updateHotel(Long id, HotelSaveRequest req) {
+        Hotel hotel = hotelMapper.selectById(id);
+        if (hotel == null) throw new BusinessException("酒店不存在");
+        BeanUtil.copyProperties(req, hotel, "id");
+        hotelMapper.updateById(hotel);
+    }
+
+    @Override
+    public void deleteHotel(Long id) {
+        hotelMapper.deleteById(id);
+    }
+
+    // ========== 房型 ==========
+
+    @Override
+    public List<RoomVO> listRoomsByHotelId(Long hotelId) {
+        List<Room> rooms = roomMapper.selectList(
+                new LambdaQueryWrapper<Room>().eq(Room::getHotelId, hotelId).eq(Room::getStatus, 1));
+        return rooms.stream().map(r -> {
+            RoomVO vo = new RoomVO();
+            BeanUtil.copyProperties(r, vo, "cancelable");
+            vo.setCancelable(r.getCancelable());
+
+            BedType bt = bedTypeMapper.selectById(r.getBedTypeId());
+            if (bt != null) vo.setBedType(bt.getName());
+
+            Breakfast bf = breakfastMapper.selectById(r.getBreakfastId());
+            if (bf != null) vo.setBreakfast(bf.getName());
+
+            List<RoomImage> images = roomImageMapper.selectList(
+                    new LambdaQueryWrapper<RoomImage>().eq(RoomImage::getRoomId, r.getId()));
+            vo.setImages(images.stream().map(RoomImage::getUrl).toList());
+
+            List<RoomFacility> facilities = roomFacilityMapper.selectList(
+                    new LambdaQueryWrapper<RoomFacility>().eq(RoomFacility::getRoomId, r.getId()));
+            vo.setFacilities(facilities.stream().map(RoomFacility::getName).toList());
+
+            return vo;
+        }).toList();
+    }
+
+    @Override
+    public void saveRoom(RoomSaveRequest req) {
+        Room room = new Room();
+        BeanUtil.copyProperties(req, room);
+        room.setStatus(1);
+        roomMapper.insert(room);
+    }
+
+    @Override
+    public void updateRoom(Long id, RoomSaveRequest req) {
+        Room room = roomMapper.selectById(id);
+        if (room == null) throw new BusinessException("房型不存在");
+        BeanUtil.copyProperties(req, room, "id");
+        roomMapper.updateById(room);
+    }
+
+    @Override
+    public void deleteRoom(Long id) {
+        roomMapper.deleteById(id);
+    }
+
+    // ========== 字典 ==========
+
+    @Override
+    public List<Breakfast> listBreakfasts() {
+        return breakfastMapper.selectList(null);
+    }
+
+    @Override
+    public List<BedType> listBedTypes() {
+        return bedTypeMapper.selectList(null);
+    }
+}
