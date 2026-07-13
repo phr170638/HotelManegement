@@ -7,6 +7,7 @@ import com.hotel.module.resource.service.ResourceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "资源管理-国家")
@@ -27,6 +28,7 @@ public class CountryController {
 
     @Operation(summary = "新增国家")
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public R<Void> save(@RequestBody Country country) {
         resourceService.saveCountry(country);
         return R.ok();
@@ -34,6 +36,7 @@ public class CountryController {
 
     @Operation(summary = "更新国家")
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public R<Void> update(@PathVariable Long id, @RequestBody Country country) {
         country.setId(id);
         resourceService.updateCountry(country);
@@ -42,6 +45,7 @@ public class CountryController {
 
     @Operation(summary = "删除国家")
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public R<Void> delete(@PathVariable Long id) {
         resourceService.deleteCountry(id);
         return R.ok();

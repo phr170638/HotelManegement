@@ -305,7 +305,7 @@ INSERT INTO t_role_permission (role_id, permission_id) VALUES
 
 -- 管理员用户 (密码: admin123, BCrypt加密)
 INSERT INTO t_user (id, phone, email, password, nickname, status) VALUES
-(1, '13800000000', 'admin@hotel.com', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iKTVKIUi', '系统管理员', 1);
+(1, '13800000000', 'admin@hotel.com', '$2b$12$S.xIWxzZrTUrGcQho1.sB.Rt2nwIpO2Z7/4diMyAX51ZVR3WiAhga', '系统管理员', 1);
 
 -- 管理员角色分配
 INSERT INTO t_user_role (user_id, role_id) VALUES (1, 1);
