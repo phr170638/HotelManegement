@@ -479,27 +479,45 @@ class ResourceControllerTest {
     class CountryDelete {
 
         private Long emptyCountryId;
+        private Long countryWithCitiesId;
+        private City cityUnderCountry;
 
         @BeforeEach
         void setup() {
+            // 空国家 — 测试成功删除
             Country c = new Country();
             c.setCode("ZZ");
             c.setNameCn("空国家测试");
             c.setNameEn("Empty Test Country");
             countryMapper.insert(c);
             emptyCountryId = c.getId();
+
+            // 有城市的国家 — 测试拒绝删除
+            Country c2 = new Country();
+            c2.setCode("TE");
+            c2.setNameCn("有城市国家测试");
+            c2.setNameEn("Test Country With Cities");
+            countryMapper.insert(c2);
+            countryWithCitiesId = c2.getId();
+
+            cityUnderCountry = new City();
+            cityUnderCountry.setCountryId(countryWithCitiesId);
+            cityUnderCountry.setNameCn("附属城市");
+            cityUnderCountry.setCode("SUB");
+            cityMapper.insert(cityUnderCountry);
         }
 
         @AfterEach
         void tearDown() {
+            if (cityUnderCountry != null) cityMapper.deleteById(cityUnderCountry.getId());
+            if (countryWithCitiesId != null) countryMapper.deleteById(countryWithCitiesId);
             countryMapper.deleteById(emptyCountryId);
         }
 
         @Test
         @DisplayName("删除有城市的国家 — 返回400错误")
         void shouldFailWhenCountryHasCities() throws Exception {
-            // 国家1（中国）有多个城市，不能直接删除
-            mockMvc.perform(delete("/api/resource/countries/1")
+            mockMvc.perform(delete("/api/resource/countries/" + countryWithCitiesId)
                             .header("Authorization", "Bearer " + adminToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value(400));
@@ -532,9 +550,12 @@ class ResourceControllerTest {
     class CityDelete {
 
         private Long emptyCityId;
+        private Long cityWithHotelId;
+        private Hotel hotelInCity;
 
         @BeforeEach
         void setup() {
+            // 空城市 — 测试成功删除
             City c = new City();
             c.setCountryId(1L);
             c.setNameCn("空城市测试");
@@ -542,18 +563,34 @@ class ResourceControllerTest {
             c.setHot(0);
             cityMapper.insert(c);
             emptyCityId = c.getId();
+
+            // 有酒店的城市 — 测试拒绝删除
+            City c2 = new City();
+            c2.setCountryId(1L);
+            c2.setNameCn("有酒店城市测试");
+            c2.setCode("HOTELC");
+            c2.setHot(0);
+            cityMapper.insert(c2);
+            cityWithHotelId = c2.getId();
+
+            hotelInCity = new Hotel();
+            hotelInCity.setCityId(cityWithHotelId);
+            hotelInCity.setNameCn("防删酒店");
+            hotelInCity.setStatus(1);
+            hotelMapper.insert(hotelInCity);
         }
 
         @AfterEach
         void tearDown() {
+            if (hotelInCity != null) hotelMapper.deleteById(hotelInCity.getId());
+            if (cityWithHotelId != null) cityMapper.deleteById(cityWithHotelId);
             cityMapper.deleteById(emptyCityId);
         }
 
         @Test
         @DisplayName("删除有酒店的城市 — 返回400错误")
         void shouldFailWhenCityHasHotels() throws Exception {
-            // 城市1（北京）有酒店，不能直接删除
-            mockMvc.perform(delete("/api/resource/cities/1")
+            mockMvc.perform(delete("/api/resource/cities/" + cityWithHotelId)
                             .header("Authorization", "Bearer " + adminToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value(400));
