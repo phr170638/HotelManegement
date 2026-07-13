@@ -20,7 +20,5 @@ public interface UserService {
 
     PageResult<OrderListVO> getMyOrders(Long userId, Integer page, Integer size, Integer status);
 
-    void sendCode(String email, String type);
-
-    OrderListVO getOrderById(Long userId, Long id);
+    void sendCode(String phone, String type);
 }

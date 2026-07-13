@@ -1,13 +1,9 @@
 package com.hotel.module.user.service.impl;
 
 import cn.hutool.core.lang.UUID;
-import cn.hutool.core.util.RandomUtil;
-import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hotel.common.exception.BusinessException;
 import com.hotel.common.result.PageResult;
 import com.hotel.common.util.JwtUtil;
-import com.hotel.module.order.mapper.OrderMapper;
 import com.hotel.module.user.dto.LoginRequest;
 import com.hotel.module.user.dto.RegisterRequest;
 import com.hotel.module.user.dto.UpdateUserRequest;
@@ -20,14 +16,10 @@ import com.hotel.module.user.vo.LoginVO;
 import com.hotel.module.user.vo.OrderListVO;
 import com.hotel.module.user.vo.UserVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -35,22 +27,15 @@ public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
     private final UserRoleMapper userRoleMapper;
-    private final OrderMapper orderMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
-    private final JavaMailSender mailSender;
-    private final StringRedisTemplate redisTemplate;
 
     @Override
     public void register(RegisterRequest req) {
-        // 验证码校验
-        String email = req.getEmail() != null ? req.getEmail() : req.getPhone();
-        String redisKey = "code:" + email + ":register";
-        String cachedCode = redisTemplate.opsForValue().get(redisKey);
-        if (cachedCode == null || !cachedCode.equals(req.getCode())) {
-            throw new BusinessException("验证码错误或已过期");
+        // 验证码校验（TODO: 实际对接短信/邮箱服务）
+        if (!"888888".equals(req.getCode())) {
+            throw new BusinessException("验证码错误");
         }
-        redisTemplate.delete(redisKey);
 
         // 手机号/邮箱唯一性校验
         if (req.getPhone() != null && userMapper.selectByPhone(req.getPhone()) != null) {
@@ -135,33 +120,12 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public PageResult<OrderListVO> getMyOrders(Long userId, Integer page, Integer size, Integer status) {
-        Page<OrderListVO> pageParam = new Page<>(page, size);
-        IPage<OrderListVO> result = orderMapper.selectMyOrders(pageParam, userId, status);
-        return PageResult.of(result);
+        // TODO: 从订单表查询用户订单
+        return new PageResult<>(List.of(), 0L, page, size);
     }
 
     @Override
-    public void sendCode(String email, String type) {
-        // 生成6位验证码
-        String code = RandomUtil.randomNumbers(6);
-
-        // 存入 Redis，5分钟过期
-        String redisKey = "code:" + email + ":" + type;
-        redisTemplate.opsForValue().set(redisKey, code, 5, TimeUnit.MINUTES);
-
-        // 发送邮件
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom("1785383200@qq.com");
-        message.setTo(email);
-        message.setSubject("验证码 - 酒店预订系统");
-        message.setText("您的验证码是：" + code + "，有效期5分钟，请勿泄露。");
-        mailSender.send(message);
-    }
-
-    @Override
-    public OrderListVO getOrderById(Long userId, Long id) {
-        OrderListVO vo = orderMapper.selectOrderById(id, userId);
-        if (vo == null) throw new BusinessException("订单不存在");
-        return vo;
+    public void sendCode(String phone, String type) {
+        // TODO: 对接短信/邮箱验证码服务，当前开发阶段固定返回888888
     }
 }
