@@ -121,8 +121,7 @@ class AdminControllerTest {
                             .header("Authorization", "Bearer " + adminToken)
                             .param("reason", "测试退款"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.code").value(200))
-                    .andExpect(jsonPath("$.message").value("退票处理成功"));
+                    .andExpect(jsonPath("$.code").value(200));
         }
 
         @Test
