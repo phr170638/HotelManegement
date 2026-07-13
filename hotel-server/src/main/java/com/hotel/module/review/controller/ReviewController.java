@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -40,6 +41,7 @@ public class ReviewController {
     }
 
     @Operation(summary = "商家回复（管理端）")
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}/reply")
     public R<Void> reply(@PathVariable Long id, @RequestBody Map<String, String> body) {
         reviewService.reply(id, body.get("reply"));
