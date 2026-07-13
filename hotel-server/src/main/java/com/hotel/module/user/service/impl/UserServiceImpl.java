@@ -20,6 +20,7 @@ import com.hotel.module.user.vo.LoginVO;
 import com.hotel.module.user.vo.OrderListVO;
 import com.hotel.module.user.vo.UserVO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -40,6 +41,9 @@ public class UserServiceImpl implements UserService {
     private final JwtUtil jwtUtil;
     private final JavaMailSender mailSender;
     private final StringRedisTemplate redisTemplate;
+
+    @Value("${spring.mail.username}")
+    private String mailFrom;
 
     @Override
     public void register(RegisterRequest req) {
@@ -151,7 +155,7 @@ public class UserServiceImpl implements UserService {
 
         // 发送邮件
         SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom("1785383200@qq.com");
+        message.setFrom(mailFrom);
         message.setTo(email);
         message.setSubject("验证码 - 酒店预订系统");
         message.setText("您的验证码是：" + code + "，有效期5分钟，请勿泄露。");

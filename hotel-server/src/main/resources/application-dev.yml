@@ -7,10 +7,6 @@ spring:
     username: root
     password: 1234
     driver-class-name: com.mysql.cj.jdbc.Driver
-  redis:
-    host: localhost
-    port: 6379
-    password:
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
@@ -22,14 +18,19 @@ spring:
   mail:
     host: smtp.qq.com
     port: 587
-    username: 1785383200@qq.com
-    password: iuuhcgzoounkbabe
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
           auth: true
           starttls:
             enable: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
 
 mybatis-plus:
   mapper-locations: classpath*:com/hotel/**/*.xml
@@ -51,11 +52,11 @@ jwt:
   secret: hotel-management-system-jwt-secret-key-2026-min-256-bits-long-enough
   expiration: 86400000
 
-# 支付宝沙箱配置 (TODO: 替换为真实配置)
+# 支付宝沙箱配置（真实密钥在 application-local.yml 或环境变量）
 alipay:
-  app-id: your_app_id
-  private-key: your_private_key
-  alipay-public-key: your_alipay_public_key
+  app-id: ${ALIPAY_APP_ID:}
+  private-key: ${ALIPAY_PRIVATE_KEY:}
+  alipay-public-key: ${ALIPAY_ALIPAY_PUBLIC_KEY:}
   gateway-url: https://openapi.alipaydev.com/gateway.do
-  notify-url: http://localhost:8080/api/order/pay-notify
-  return-url: http://localhost:5173/order/result
+  notify-url: ${ALIPAY_NOTIFY_URL:http://localhost:8080/api/order/pay-notify}
+  return-url: ${ALIPAY_RETURN_URL:http://localhost:5173/order/result}

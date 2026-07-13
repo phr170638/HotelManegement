@@ -4,6 +4,7 @@ import cn.hutool.core.date.DateUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hotel.common.exception.BusinessException;
+import lombok.extern.slf4j.Slf4j;
 import com.hotel.common.result.PageResult;
 import com.hotel.module.order.dto.OrderCreateRequest;
 import com.hotel.module.order.entity.Order;
@@ -12,6 +13,9 @@ import com.hotel.module.order.mapper.OrderItemMapper;
 import com.hotel.module.order.mapper.OrderMapper;
 import com.hotel.module.order.service.OrderService;
 import com.hotel.module.order.vo.OrderVO;
+import com.hotel.module.payment.entity.Payment;
+import com.hotel.module.payment.mapper.PaymentMapper;
+import com.hotel.module.payment.service.AlipayService;
 import com.hotel.module.resource.entity.Hotel;
 import com.hotel.module.resource.entity.Room;
 import com.hotel.module.resource.mapper.HotelMapper;
@@ -22,8 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
@@ -32,6 +38,8 @@ public class OrderServiceImpl implements OrderService {
     private final OrderItemMapper orderItemMapper;
     private final HotelMapper hotelMapper;
     private final RoomMapper roomMapper;
+    private final AlipayService alipayService;
+    private final PaymentMapper paymentMapper;
 
     @Override
     @Transactional
@@ -113,21 +121,54 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public Map<String, Object> preCancel(Long userId, Long orderId) {
-        // TODO: 实际计算退房手续费
         Order order = orderMapper.selectById(orderId);
         if (order == null) throw new BusinessException("订单不存在");
         if (!order.getUserId().equals(userId)) throw new BusinessException("无权操作此订单");
 
+        // 计算退房手续费
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime checkInTime = order.getCheckInDate().atTime(14, 0); // 入住日14:00
+        long hoursUntilCheckIn = ChronoUnit.HOURS.between(now, checkInTime);
+
+        BigDecimal totalAmount = order.getTotalAmount();
+        BigDecimal penaltyRate;
+        String penaltyDesc;
+
+        if (hoursUntilCheckIn <= 0) {
+            // 已过入住时间
+            penaltyRate = BigDecimal.ONE;
+            penaltyDesc = "已超过入住时间，不退款";
+        } else if (hoursUntilCheckIn <= 24) {
+            penaltyRate = BigDecimal.ONE;
+            penaltyDesc = "距入住不足24小时，不退款";
+        } else if (hoursUntilCheckIn <= 72) {
+            penaltyRate = new BigDecimal("0.8");
+            penaltyDesc = "距入住24小时~3天，扣除80%手续费";
+        } else if (hoursUntilCheckIn <= 168) {
+            penaltyRate = new BigDecimal("0.5");
+            penaltyDesc = "距入住3~7天，扣除50%手续费";
+        } else {
+            penaltyRate = BigDecimal.ZERO;
+            penaltyDesc = "距入住7天以上，免手续费";
+        }
+
+        BigDecimal cancelPenalty = totalAmount.multiply(penaltyRate).setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal refundAmount = totalAmount.subtract(cancelPenalty);
+
         String cancelId = "CANCEL-" + UUID.randomUUID().toString().substring(0, 8);
         order.setCancelConfirmId(cancelId);
         order.setStatus(4); // 退房申请中
+        order.setCancelAmount(cancelPenalty);
         orderMapper.updateById(order);
 
         Map<String, Object> result = new HashMap<>();
         result.put("cancelConfirmId", cancelId);
-        result.put("originalAmount", order.getTotalAmount());
-        result.put("cancelPenalty", BigDecimal.ZERO);
-        result.put("refundAmount", order.getTotalAmount());
+        result.put("originalAmount", totalAmount);
+        result.put("hoursUntilCheckIn", hoursUntilCheckIn);
+        result.put("penaltyRate", penaltyRate);
+        result.put("penaltyDesc", penaltyDesc);
+        result.put("cancelPenalty", cancelPenalty);
+        result.put("refundAmount", refundAmount);
         return result;
     }
 
@@ -194,5 +235,70 @@ public class OrderServiceImpl implements OrderService {
             case 6 -> "已完成";
             default -> "未知";
         };
+    }
+
+    @Override
+    public String getPayForm(Long userId, Long orderId) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) throw new BusinessException("订单不存在");
+        if (!order.getUserId().equals(userId)) throw new BusinessException("无权操作此订单");
+        if (order.getStatus() != 0) throw new BusinessException("仅待支付订单可发起支付");
+
+        Hotel hotel = hotelMapper.selectById(order.getHotelId());
+        String subject = hotel != null ? hotel.getNameCn() + " — 酒店预订" : "酒店预订";
+
+        return alipayService.pagePay(order.getOrderNo(),
+                order.getTotalAmount().toString(), subject);
+    }
+
+    @Override
+    @Transactional
+    public void handlePayNotify(Map<String, String> params) {
+        // 1. 验证签名
+        if (!alipayService.verifySignature(params)) {
+            log.error("支付宝回调签名验证失败");
+            throw new BusinessException("签名验证失败");
+        }
+
+        // 2. 只处理交易成功
+        if (!alipayService.isTradeSuccess(params)) {
+            log.info("支付宝回调非交易成功状态: {}", params.get("trade_status"));
+            return;
+        }
+
+        String orderNo = alipayService.extractOrderNo(params);
+        String tradeNo = alipayService.extractTradeNo(params);
+        String amount = alipayService.extractAmount(params);
+
+        // 3. 查找订单
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, orderNo));
+        if (order == null) {
+            log.error("支付宝回调订单不存在: {}", orderNo);
+            throw new BusinessException("订单不存在");
+        }
+
+        // 4. 防止重复通知
+        if (order.getStatus() != 0) {
+            log.info("订单已处理，忽略重复回调: {}", orderNo);
+            return;
+        }
+
+        // 5. 更新订单状态
+        order.setStatus(1); // 已支付
+        order.setPayTime(LocalDateTime.now());
+        orderMapper.updateById(order);
+
+        // 6. 记录支付流水
+        Payment payment = new Payment();
+        payment.setOrderId(order.getId());
+        payment.setTradeNo(tradeNo);
+        payment.setAmount(new BigDecimal(amount));
+        payment.setStatus(1); // 成功
+        payment.setPayMethod("ALIPAY");
+        payment.setPayTime(LocalDateTime.now());
+        paymentMapper.insert(payment);
+
+        log.info("支付成功: orderNo={}, tradeNo={}, amount={}", orderNo, tradeNo, amount);
     }
 }

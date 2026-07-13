@@ -19,4 +19,8 @@ public interface OrderService {
     Map<String, Object> preCancel(Long userId, Long orderId);
 
     void confirmCancel(Long userId, Long orderId, String cancelConfirmId);
+
+    String getPayForm(Long userId, Long orderId);
+
+    void handlePayNotify(Map<String, String> params);
 }
