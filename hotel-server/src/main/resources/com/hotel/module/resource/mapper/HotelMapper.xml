@@ -47,7 +47,27 @@
         <if test="req.score != null">
             AND h.score &gt;= #{req.score}
         </if>
-        ORDER BY h.score DESC, h.create_time DESC
+        ORDER BY
+        <choose>
+            <when test="req.sortBy == 'price' and req.sortOrder == 'asc'">
+                (SELECT MIN(r2.price) FROM t_room r2 WHERE r2.hotel_id = h.id AND r2.status = 1) ASC, h.score DESC
+            </when>
+            <when test="req.sortBy == 'price' and req.sortOrder == 'desc'">
+                (SELECT MIN(r2.price) FROM t_room r2 WHERE r2.hotel_id = h.id AND r2.status = 1) DESC, h.score DESC
+            </when>
+            <when test="req.sortBy == 'score' and req.sortOrder == 'asc'">
+                h.score ASC, h.create_time DESC
+            </when>
+            <when test="req.sortBy == 'star' and req.sortOrder == 'asc'">
+                h.star_level ASC, h.score DESC
+            </when>
+            <when test="req.sortBy == 'star' and req.sortOrder == 'desc'">
+                h.star_level DESC, h.score DESC
+            </when>
+            <otherwise>
+                h.score DESC, h.create_time DESC
+            </otherwise>
+        </choose>
     </select>
 
     <!-- 酒店详情 -->
