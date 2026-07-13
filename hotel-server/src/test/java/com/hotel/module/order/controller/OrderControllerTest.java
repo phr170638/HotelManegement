@@ -226,7 +226,7 @@ class OrderControllerTest {
                     .andExpect(jsonPath("$.code").value(200))
                     .andExpect(jsonPath("$.data.id").exists())
                     .andExpect(jsonPath("$.data.orderNo").exists())
-                    .andExpect(jsonPath("$.data.totalAmount").value("299.00"))
+                    .andExpect(jsonPath("$.data.totalAmount").value(299.0))
                     .andExpect(jsonPath("$.data.status").value(0))
                     .andExpect(jsonPath("$.data.guestName").value("张三"))
                     .andExpect(jsonPath("$.data.hotelName").value("测试酒店"))
