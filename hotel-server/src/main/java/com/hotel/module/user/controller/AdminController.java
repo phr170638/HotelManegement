@@ -50,7 +50,7 @@ public class AdminController {
             order.setStatus(5); // 已退房
             orderMapper.updateById(order);
         }
-        return R.ok();
+        return R.okMsg("退票处理成功");
     }
 
     @Operation(summary = "用户列表")
