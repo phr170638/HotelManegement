@@ -9,7 +9,7 @@ import com.hotel.module.resource.entity.Hotel;
 import com.hotel.module.resource.mapper.HotelMapper;
 import com.hotel.module.user.dto.LoginRequest;
 import com.hotel.module.user.dto.RegisterRequest;
-import UserRole;
+import com.hotel.module.user.entity.UserRole;
 import com.hotel.module.user.mapper.UserMapper;
 import com.hotel.module.user.mapper.UserRoleMapper;
 import org.junit.jupiter.api.AfterEach;
