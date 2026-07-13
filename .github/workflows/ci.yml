@@ -49,14 +49,23 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build with Maven
-        run: mvn clean compile test -DskipTests=false
+      - name: Build & Test with Coverage
+        run: mvn clean test jacoco:report -DskipTests=false
         env:
           SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/hotel_db?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
           SPRING_DATASOURCE_USERNAME: root
           SPRING_DATASOURCE_PASSWORD: root
           SPRING_REDIS_HOST: localhost
           SPRING_REDIS_PORT: 6379
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          directory: hotel-server/target/site/jacoco
+          flags: backend
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   # ==================== 前端 ====================
   frontend:
