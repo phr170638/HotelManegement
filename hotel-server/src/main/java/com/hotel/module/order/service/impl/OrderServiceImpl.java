@@ -61,6 +61,7 @@ public class OrderServiceImpl implements OrderService {
         order.setRoomCount(req.getRoomCount());
         order.setGuestName(req.getGuestName());
         order.setGuestPhone(req.getGuestPhone());
+        order.setTotalAmount(BigDecimal.ZERO);
         order.setStatus(0); // 待支付
         order.setCreateTime(LocalDateTime.now());
         orderMapper.insert(order);
