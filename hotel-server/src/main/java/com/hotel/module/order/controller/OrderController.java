@@ -29,11 +29,12 @@ public class OrderController {
         return R.ok(orderService.create(userId, request));
     }
 
-    @Operation(summary = "发起支付")
+    @Operation(summary = "发起支付（返回支付宝收银台HTML表单）")
     @PostMapping("/{id}/pay")
-    public R<Map<String, Object>> pay(@PathVariable Long id) {
-        // TODO: 集成支付宝沙箱支付
-        return R.ok(Map.of("message", "支付功能待集成", "orderNo", ""));
+    public R<String> pay(@AuthenticationPrincipal Long userId,
+                           @PathVariable Long id) {
+        String form = orderService.getPayForm(userId, id);
+        return R.ok(form);
     }
 
     @Operation(summary = "取消订单")
@@ -60,8 +61,8 @@ public class OrderController {
 
     @Operation(summary = "支付回调（支付宝异步通知）")
     @PostMapping("/pay-notify")
-    public String payNotify() {
-        // TODO: 处理支付宝异步通知
+    public String payNotify(@RequestParam Map<String, String> params) {
+        orderService.handlePayNotify(params);
         return "success";
     }
 }
