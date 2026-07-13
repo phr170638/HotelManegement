@@ -20,7 +20,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.Set;
 
@@ -29,6 +31,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@TestPropertySource(properties = {
+        "spring.sql.init.mode=always",
+        "spring.sql.init.schema-locations=classpath:db/schema.sql"
+})
 @DisplayName("用户模块接口测试")
 class UserControllerTest {
 
@@ -462,19 +468,30 @@ class UserControllerTest {
         req.setPhone(TEST_PHONE);
         req.setPassword(TEST_PASSWORD);
         req.setCode("123456");
-        mockMvc.perform(post("/api/user/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(req)));
+
+        MvcResult registerResult = mockMvc.perform(post("/api/user/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andReturn();
+        String registerBody = registerResult.getResponse().getContentAsString();
+        if (!registerBody.contains("\"code\":200")) {
+            throw new AssertionError("注册失败，无法获取token: " + registerBody);
+        }
 
         LoginRequest loginReq = new LoginRequest();
         loginReq.setPhone(TEST_PHONE);
         loginReq.setPassword(TEST_PASSWORD);
 
-        String response = mockMvc.perform(post("/api/user/login")
+        MvcResult loginResult = mockMvc.perform(post("/api/user/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginReq)))
-                .andReturn().getResponse().getContentAsString();
+                .andReturn();
+        String loginBody = loginResult.getResponse().getContentAsString();
 
-        return objectMapper.readTree(response).get("data").get("token").asText();
+        var dataNode = objectMapper.readTree(loginBody).get("data");
+        if (dataNode == null || dataNode.get("token") == null) {
+            throw new AssertionError("登录失败，未返回token: " + loginBody);
+        }
+        return dataNode.get("token").asText();
     }
 }
