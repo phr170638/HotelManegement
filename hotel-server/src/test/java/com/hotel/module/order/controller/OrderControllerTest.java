@@ -7,6 +7,8 @@ import com.hotel.module.order.entity.Order;
 import com.hotel.module.order.entity.OrderItem;
 import com.hotel.module.order.mapper.OrderItemMapper;
 import com.hotel.module.order.mapper.OrderMapper;
+import com.hotel.module.payment.entity.Payment;
+import com.hotel.module.payment.mapper.PaymentMapper;
 import com.hotel.module.payment.service.AlipayService;
 import com.hotel.module.resource.entity.Hotel;
 import com.hotel.module.resource.entity.Room;
@@ -14,7 +16,7 @@ import com.hotel.module.resource.mapper.HotelMapper;
 import com.hotel.module.resource.mapper.RoomMapper;
 import com.hotel.module.user.dto.LoginRequest;
 import com.hotel.module.user.dto.RegisterRequest;
-import UserRole;
+import com.hotel.module.user.entity.UserRole;
 import com.hotel.module.user.mapper.UserMapper;
 import com.hotel.module.user.mapper.UserRoleMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -80,6 +82,9 @@ class OrderControllerTest {
     @Autowired
     private OrderItemMapper orderItemMapper;
 
+    @Autowired
+    private PaymentMapper paymentMapper;
+
     @MockBean
     private AlipayService alipayService;
 
@@ -141,6 +146,9 @@ class OrderControllerTest {
         var orders = orderMapper.selectList(new LambdaQueryWrapper<>());
         if (orders != null) {
             orders.forEach(o -> {
+                paymentMapper.delete(
+                        new LambdaQueryWrapper<Payment>()
+                                .eq(Payment::getOrderId, o.getId()));
                 orderItemMapper.delete(
                         new LambdaQueryWrapper<OrderItem>()
                                 .eq(OrderItem::getOrderId, o.getId()));
