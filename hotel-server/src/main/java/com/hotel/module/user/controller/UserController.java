@@ -33,8 +33,9 @@ public class UserController {
 
     @Operation(summary = "发送验证码")
     @PostMapping("/send-code")
-    public R<Void> sendCode(@RequestParam String phone, @RequestParam String type) {
-        userService.sendCode(phone, type);
+    public R<Void> sendCode(@RequestParam String email,
+                             @RequestParam(defaultValue = "register") String type) {
+        userService.sendCode(email, type);
         return R.okMsg("验证码已发送");
     }
 
@@ -65,5 +66,11 @@ public class UserController {
                                               @RequestParam(defaultValue = "10") Integer size,
                                               @RequestParam(required = false) Integer status) {
         return R.ok(userService.getMyOrders(userId, page, size, status));
+    }
+
+    @Operation(summary = "根据id获取订单详情")
+    @GetMapping("/orders/{id}")
+    public R<OrderListVO> order(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        return R.ok(userService.getOrderById(userId, id));
     }
 }
