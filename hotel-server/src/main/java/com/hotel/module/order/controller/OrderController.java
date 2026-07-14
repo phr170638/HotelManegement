@@ -2,9 +2,11 @@ package com.hotel.module.order.controller;
 
 import com.hotel.common.result.PageResult;
 import com.hotel.common.result.R;
+import com.hotel.common.exception.BusinessException;
 import com.hotel.module.order.dto.OrderCreateRequest;
 import com.hotel.module.order.service.OrderService;
 import com.hotel.module.order.vo.OrderVO;
+import com.hotel.module.payment.service.AlipayService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -21,6 +23,7 @@ import java.util.Map;
 public class OrderController {
 
     private final OrderService orderService;
+    private final AlipayService alipayService;
 
     @Operation(summary = "创建订单")
     @PostMapping("/create")
@@ -29,11 +32,17 @@ public class OrderController {
         return R.ok(orderService.create(userId, request));
     }
 
+    @Operation(summary = "订单详情")
+    @GetMapping("/{id}")
+    public R<OrderVO> detail(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        return R.ok(orderService.detailByUser(userId, id));
+    }
+
     @Operation(summary = "发起支付")
     @PostMapping("/{id}/pay")
-    public R<Map<String, Object>> pay(@PathVariable Long id) {
-        // TODO: 集成支付宝沙箱支付
-        return R.ok(Map.of("message", "支付功能待集成", "orderNo", ""));
+    public R<Map<String, Object>> pay(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        orderService.detailByUser(userId, id);
+        return R.ok(alipayService.createPagePay(id));
     }
 
     @Operation(summary = "取消订单")
@@ -60,8 +69,11 @@ public class OrderController {
 
     @Operation(summary = "支付回调（支付宝异步通知）")
     @PostMapping("/pay-notify")
-    public String payNotify() {
-        // TODO: 处理支付宝异步通知
-        return "success";
+    public String payNotify(@RequestParam Map<String, String> params) {
+        try {
+            return alipayService.handleNotify(params);
+        } catch (BusinessException ex) {
+            return "failure";
+        }
     }
 }

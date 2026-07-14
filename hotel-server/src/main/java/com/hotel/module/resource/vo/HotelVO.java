@@ -19,6 +19,9 @@ public class HotelVO {
     private String brand;
     private String description;
     private BigDecimal score;
+    private String mainImage;
+    private BigDecimal minPrice;
+    private Integer reviewCount;
     private List<ImageVO> images;
     private List<String> facilities;
     private List<RoomVO> rooms;

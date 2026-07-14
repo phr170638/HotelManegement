@@ -2,17 +2,21 @@ package com.hotel.module.user.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.hotel.common.exception.BusinessException;
 import com.hotel.common.result.PageResult;
 import com.hotel.common.result.R;
 import com.hotel.module.order.entity.Order;
 import com.hotel.module.order.mapper.OrderMapper;
 import com.hotel.module.user.entity.User;
 import com.hotel.module.user.mapper.UserMapper;
+import com.hotel.module.user.vo.UserAdminVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @Tag(name = "管理端", description = "管理员接口 — 订单、用户管理")
 @RestController
@@ -41,35 +45,53 @@ public class AdminController {
         return R.ok(PageResult.of(result));
     }
 
-    @Operation(summary = "退票处理")
+    @Operation(summary = "退款处理")
     @PutMapping("/orders/{id}/refund")
     public R<Void> refund(@PathVariable Long id, @RequestParam String reason) {
-        // TODO: 实现退票退款逻辑
-        Order order = orderMapper.selectById(id);
-        if (order != null) {
-            order.setStatus(5); // 已退房
-            orderMapper.updateById(order);
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("退款原因不能为空");
         }
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException("订单不存在");
+        }
+        order.setStatus(5); // 已退房
+        orderMapper.updateById(order);
         return R.ok();
     }
 
     @Operation(summary = "用户列表")
     @GetMapping("/users")
-    public R<PageResult<User>> users(@RequestParam(defaultValue = "1") Integer page,
-                                      @RequestParam(defaultValue = "20") Integer size) {
+    public R<PageResult<UserAdminVO>> users(@RequestParam(defaultValue = "1") Integer page,
+                                            @RequestParam(defaultValue = "20") Integer size) {
         Page<User> result = userMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<User>().orderByDesc(User::getCreateTime));
-        return R.ok(PageResult.of(result));
+        List<UserAdminVO> records = result.getRecords().stream().map(user -> {
+            UserAdminVO vo = new UserAdminVO();
+            vo.setId(user.getId());
+            vo.setPhone(user.getPhone());
+            vo.setEmail(user.getEmail());
+            vo.setNickname(user.getNickname());
+            vo.setAvatar(user.getAvatar());
+            vo.setStatus(user.getStatus());
+            vo.setCreateTime(user.getCreateTime());
+            return vo;
+        }).toList();
+        return R.ok(new PageResult<>(records, result.getTotal(), (int) result.getCurrent(), (int) result.getSize()));
     }
 
     @Operation(summary = "启用/禁用用户")
     @PutMapping("/users/{id}/status")
     public R<Void> toggleUserStatus(@PathVariable Long id, @RequestParam Integer status) {
-        User user = userMapper.selectById(id);
-        if (user != null) {
-            user.setStatus(status);
-            userMapper.updateById(user);
+        if (status == null || (status != 0 && status != 1)) {
+            throw new BusinessException("用户状态只能是 0 或 1");
         }
+        User user = userMapper.selectById(id);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        user.setStatus(status);
+        userMapper.updateById(user);
         return R.ok();
     }
 }

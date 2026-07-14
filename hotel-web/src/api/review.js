@@ -1,7 +1,7 @@
 import request from './request'
 
-export function getHotelReviews(hotelId, params) {
-  return request.get(`/review/hotel/${hotelId}`, { params })
+export function getHotelReviews(hotelId, params, config = {}) {
+  return request.get(`/review/hotel/${hotelId}`, { params, ...config })
 }
 
 export function createReview(data) {

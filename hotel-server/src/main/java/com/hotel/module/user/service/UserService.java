@@ -6,7 +6,9 @@ import com.hotel.module.user.dto.RegisterRequest;
 import com.hotel.module.user.dto.UpdateUserRequest;
 import com.hotel.module.user.vo.LoginVO;
 import com.hotel.module.user.vo.OrderListVO;
+import com.hotel.module.user.vo.SendCodeVO;
 import com.hotel.module.user.vo.UserVO;
+import com.hotel.module.order.vo.OrderVO;
 
 public interface UserService {
 
@@ -20,5 +22,7 @@ public interface UserService {
 
     PageResult<OrderListVO> getMyOrders(Long userId, Integer page, Integer size, Integer status);
 
-    void sendCode(String phone, String type);
+    OrderVO getMyOrderDetail(Long userId, Long orderId);
+
+    SendCodeVO sendCode(String phone, String type);
 }

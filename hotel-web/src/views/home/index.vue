@@ -1,79 +1,75 @@
-<template>
-  <div class="home-page">
-    <!-- Hero Banner -->
-    <div class="hero-banner">
-      <div class="hero-content">
-        <h1>全球酒店，轻松预订</h1>
-        <p>海量酒店资源，最优价格保障</p>
-        <div class="search-box">
-          <el-input
-            v-model="keyword"
-            size="large"
-            placeholder="搜索酒店名称、品牌或地标"
-            prefix-icon="Search"
-            @keyup.enter="goSearch"
-          />
-          <el-button type="primary" size="large" @click="goSearch">搜索</el-button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 热门城市 -->
-    <div class="section">
-      <h2 class="section-title">热门城市</h2>
-      <div class="city-grid">
-        <div
-          v-for="city in hotCities"
-          :key="city.id"
-          class="city-card"
-          @click="searchByCity(city.id)"
-        >
-          <h3>{{ city.nameCn }}</h3>
-          <p>{{ city.nameEn }}</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- 推荐酒店 -->
-    <div class="section">
-      <h2 class="section-title">精品推荐</h2>
-      <div class="hotel-grid">
-        <HotelCard
-          v-for="hotel in hotels"
-          :key="hotel.id"
-          :hotel="hotel"
-        />
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup>
-import { ref, onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { CircleCheck, Search } from '@element-plus/icons-vue'
 import { getHotCities, getHotels } from '@/api/resource'
 import HotelCard from '@/components/HotelCard.vue'
+import { getCityImage, heroBannerImage } from '@/utils/hotel'
 
 const router = useRouter()
 const keyword = ref('')
 const hotCities = ref([])
 const hotels = ref([])
+const cityLoadFailed = ref(false)
+const hotelLoadFailed = ref(false)
+
+const featureMetrics = [
+  { value: '多城', label: '按城市、商圈与品牌快速找房' },
+  { value: '24h', label: '随时提交预订并查看订单进度' },
+  { value: '安心订', label: '房型、价格与预订规则清楚展示' }
+]
+
+const serviceHighlights = [
+  {
+    title: '先看位置，再选房型',
+    desc: '搜索结果会优先展示城市、地段、价格和评分，方便你先缩小范围。'
+  },
+  {
+    title: '订前信息看得明白',
+    desc: '房型、早餐、入住人数和价格放在同一页，不需要来回切换页面确认。'
+  },
+  {
+    title: '下单流程更直接',
+    desc: '从酒店详情进入预订后，关键信息会继续保留，减少重复填写。'
+  },
+  {
+    title: '订单状态随时可查',
+    desc: '登录后可以回看自己的订单记录，确认是否待支付、待入住或已完成。'
+  }
+]
 
 onMounted(async () => {
-  try {
-    const [cities, hotelData] = await Promise.all([
-      getHotCities().catch(() => []),
-      getHotels({ page: 1, size: 6 }).catch(() => ({ records: [] }))
-    ])
-    hotCities.value = cities
-    hotels.value = hotelData.records || []
-  } catch (e) {
-    // 后端未启动时静默失败
-  }
+  await fetchHomeData()
 })
 
+async function fetchHomeData() {
+  const [cityResult, hotelResult] = await Promise.allSettled([
+    getHotCities({ silent: true }),
+    getHotels({ page: 1, size: 6 }, { silent: true })
+  ])
+
+  if (cityResult.status === 'fulfilled') {
+    hotCities.value = (cityResult.value || []).map((city) => ({
+      ...city,
+      image: city.image || getCityImage(city.nameCn || city.nameEn)
+    }))
+    cityLoadFailed.value = false
+  } else {
+    hotCities.value = []
+    cityLoadFailed.value = true
+  }
+
+  if (hotelResult.status === 'fulfilled') {
+    hotels.value = hotelResult.value.records || []
+    hotelLoadFailed.value = false
+  } else {
+    hotels.value = []
+    hotelLoadFailed.value = true
+  }
+}
+
 function goSearch() {
-  router.push({ path: '/search', query: { keyword: keyword.value } })
+  router.push({ path: '/search', query: { keyword: keyword.value || undefined } })
 }
 
 function searchByCity(cityId) {
@@ -81,61 +77,326 @@ function searchByCity(cityId) {
 }
 </script>
 
+<template>
+  <div class="home-page">
+    <section class="page-section hero">
+      <div class="page-hero hero-card">
+        <img :src="heroBannerImage" alt="酒店大堂视觉" class="image-cover" />
+        <div class="hero-overlay" />
+        <div class="hero-content">
+          <div class="gold-chip hero-chip">住客预订</div>
+          <h1 class="page-title">自在入住，从一间更懂旅人的酒店开始</h1>
+          <p class="page-subtitle">
+            围绕搜索、看房型、比价格和提交订单这几件事，把住客最常用的预订动作放在一条顺手的路径里。
+          </p>
+
+          <div class="search-panel glass-panel">
+            <el-input
+              v-model="keyword"
+              size="large"
+              clearable
+              placeholder="搜索酒店名称、品牌、城市或地标"
+              @keyup.enter="goSearch"
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+            <el-button type="primary" class="hero-btn" @click="goSearch">立即搜索</el-button>
+          </div>
+
+          <div class="hero-metrics">
+            <div v-for="item in featureMetrics" :key="item.label" class="metric-card">
+              <strong>{{ item.value }}</strong>
+              <span>{{ item.label }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-section overview">
+      <div class="section-heading">
+        <div class="section-copy">
+          <div class="gold-chip">住客服务</div>
+          <h2>订房前，你最关心的信息都在这里</h2>
+          <p>不是讲系统能力，而是把普通住客真正会用到的找房、看房、下单和查订单体验讲清楚。</p>
+        </div>
+      </div>
+
+      <div class="overview-grid">
+        <div v-for="item in serviceHighlights" :key="item.title" class="overview-card soft-card">
+          <el-icon><CircleCheck /></el-icon>
+          <h3>{{ item.title }}</h3>
+          <p>{{ item.desc }}</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-section city-section">
+      <div class="section-heading">
+        <div class="section-copy">
+          <div class="gold-chip">热门城市</div>
+          <h2>从热门目的地开始找房</h2>
+          <p>先按出行城市进入，再缩小到酒店、房型和价格，会更接近日常订房习惯。</p>
+        </div>
+      </div>
+
+      <div v-if="hotCities.length" class="city-grid">
+        <article v-for="city in hotCities" :key="city.id" class="city-card soft-card" @click="searchByCity(city.id)">
+          <img :src="city.image" :alt="city.nameCn" class="image-cover" />
+          <div class="city-mask">
+            <div>
+              <h3>{{ city.nameCn }}</h3>
+              <p>{{ city.nameEn }}</p>
+            </div>
+            <el-button text>查看酒店</el-button>
+          </div>
+        </article>
+      </div>
+      <el-empty
+        v-else
+        class="section-empty"
+        :description="cityLoadFailed ? '热门城市暂时加载失败，请稍后刷新重试' : '当前暂无热门城市数据'"
+      >
+        <el-button v-if="cityLoadFailed" class="more-btn" @click="fetchHomeData">重新加载</el-button>
+      </el-empty>
+    </section>
+
+    <section class="page-section recommend-section">
+      <div class="section-heading">
+        <div class="section-copy">
+          <div class="gold-chip">精选酒店</div>
+          <h2>先看看现在可以预订的酒店</h2>
+          <p>把位置、评分、价格和基础设施放在同一屏，方便你快速比较，再决定要不要点进详情。</p>
+        </div>
+        <el-button class="more-btn section-action-btn" @click="goSearch">查看全部酒店</el-button>
+      </div>
+
+      <div v-if="hotels.length" class="hotel-grid">
+        <HotelCard v-for="hotel in hotels" :key="hotel.id" :hotel="hotel" />
+      </div>
+      <el-empty
+        v-else
+        class="section-empty"
+        :description="hotelLoadFailed ? '推荐酒店暂时加载失败，请稍后刷新重试' : '当前暂无推荐酒店数据'"
+      >
+        <el-button v-if="hotelLoadFailed" class="more-btn" @click="fetchHomeData">重新加载</el-button>
+      </el-empty>
+    </section>
+  </div>
+</template>
+
 <style scoped>
-.hero-banner {
-  background: linear-gradient(135deg, #409EFF 0%, #337ECC 100%);
-  padding: 80px 20px;
-  text-align: center;
-  color: #fff;
+.home-page {
+  padding: 24px 0 0;
 }
-.hero-content h1 {
-  font-size: 36px;
-  margin-bottom: 12px;
+
+.hero-card {
+  min-height: 640px;
 }
-.hero-content p {
-  font-size: 16px;
-  margin-bottom: 32px;
-  opacity: 0.85;
-}
-.search-box {
+
+.hero-content {
+  position: relative;
+  z-index: 1;
+  min-height: 640px;
+  padding: 64px;
   display: flex;
-  max-width: 600px;
-  margin: 0 auto;
-  gap: 12px;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 820px;
 }
-.section {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 40px 20px;
+
+.hero-chip {
+  background: rgba(242, 226, 203, 0.3);
+  color: #f0cc92;
 }
-.section-title {
-  font-size: 22px;
-  margin-bottom: 20px;
-  color: #303133;
-}
-.city-grid {
+
+.search-panel {
+  margin-top: 28px;
+  padding: 18px;
+  border-radius: 24px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  background: rgba(255, 250, 244, 0.92);
+  border-color: rgba(255, 244, 230, 0.42);
+}
+
+.hero-btn,
+.more-btn {
+  --el-button-bg-color: var(--brand-primary);
+  --el-button-border-color: var(--brand-primary);
+  --el-button-text-color: #fff8f0;
+  --el-button-hover-bg-color: #7b6857;
+  --el-button-hover-border-color: #7b6857;
+  --el-button-hover-text-color: #fffdfa;
+  --el-button-active-text-color: #fffdfa;
+  min-height: 42px;
+  padding-inline: 18px;
+}
+
+.section-copy {
+  max-width: 620px;
+}
+
+.section-action-btn {
+  align-self: flex-end;
+  margin-bottom: 6px;
+}
+
+.hero-metrics {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
+
+.metric-card {
+  padding: 20px 22px;
+  border-radius: 24px;
+  background: rgba(255, 248, 240, 0.14);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 243, 231, 0.18);
+  box-shadow: 0 18px 36px rgba(43, 30, 18, 0.08);
+}
+
+.metric-card strong {
+  display: block;
+  color: #fffaf4;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.metric-card span {
+  display: block;
+  margin-top: 10px;
+  color: rgba(255, 249, 243, 0.92);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.overview,
+.city-section,
+.recommend-section {
+  padding: 48px 0 0;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.overview-card {
+  padding: 30px 34px;
+  background: rgba(255, 252, 247, 0.96);
+}
+
+.overview-card .el-icon {
+  font-size: 24px;
+  color: var(--brand-secondary-strong);
+}
+
+.overview-card h3 {
+  margin: 18px 0 10px;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.overview-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.city-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
 .city-card {
-  padding: 24px;
-  background: #fff;
-  border-radius: 8px;
-  text-align: center;
+  position: relative;
+  height: 280px;
+  overflow: hidden;
   cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
-.city-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+
+.city-mask {
+  position: absolute;
+  inset: 0;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: linear-gradient(180deg, rgba(57, 43, 31, 0.1), rgba(69, 54, 42, 0.72));
+  color: #fff;
 }
-.city-card h3 { font-size: 18px; color: #303133; }
-.city-card p { font-size: 12px; color: #909399; margin-top: 4px; }
+
+.city-mask h3 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.city-mask p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  opacity: 0.84;
+}
+
 .hotel-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
+}
+
+.section-empty {
+  min-height: 320px;
+  padding: 36px 0 12px;
+}
+
+.section-empty :deep(.el-empty__description) {
+  margin-top: 18px;
+}
+
+.section-empty :deep(.el-empty__bottom) {
+  margin-top: 22px;
+}
+
+.section-empty :deep(.el-empty__image) {
+  width: 180px;
+}
+
+@media (max-width: 1100px) {
+  .hero-content {
+    padding: 40px 24px;
+  }
+
+  .hero-metrics,
+  .city-grid,
+  .hotel-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .hero-card,
+  .hero-content {
+    min-height: 560px;
+  }
+
+  .section-action-btn {
+    align-self: stretch;
+    margin-bottom: 0;
+  }
+
+  .search-panel,
+  .hero-metrics,
+  .overview-grid,
+  .city-grid,
+  .hotel-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

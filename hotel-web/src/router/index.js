@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getToken } from '@/utils/auth'
+import { hasRole } from '@/utils/auth'
 
 const routes = [
   {
@@ -88,6 +89,8 @@ router.beforeEach((to, from, next) => {
   const token = getToken()
   if (to.meta.requiresAuth && !token) {
     next({ name: 'Login', query: { redirect: to.fullPath } })
+  } else if (to.meta.role === 'admin' && !hasRole('admin')) {
+    next({ name: 'Home' })
   } else if (to.meta.guest && token) {
     next({ name: 'Home' })
   } else {

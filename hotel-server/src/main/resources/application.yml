@@ -6,3 +6,5 @@ spring:
     name: hotel-management
   profiles:
     active: dev
+  config:
+    import: optional:file:./application-local.yml

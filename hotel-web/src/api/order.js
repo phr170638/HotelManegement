@@ -21,8 +21,8 @@ export function confirmCancelOrder(id, cancelConfirmId) {
 }
 
 // 管理端
-export function getAdminOrders(params) {
-  return request.get('/admin/orders', { params })
+export function getAdminOrders(params, config = {}) {
+  return request.get('/admin/orders', { params, ...config })
 }
 
 export function refundOrder(id, reason) {

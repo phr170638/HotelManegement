@@ -8,7 +8,9 @@ import com.hotel.module.user.dto.UpdateUserRequest;
 import com.hotel.module.user.service.UserService;
 import com.hotel.module.user.vo.LoginVO;
 import com.hotel.module.user.vo.OrderListVO;
+import com.hotel.module.user.vo.SendCodeVO;
 import com.hotel.module.user.vo.UserVO;
+import com.hotel.module.order.vo.OrderVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -33,9 +35,9 @@ public class UserController {
 
     @Operation(summary = "发送验证码")
     @PostMapping("/send-code")
-    public R<Void> sendCode(@RequestParam String phone, @RequestParam String type) {
-        userService.sendCode(phone, type);
-        return R.okMsg("验证码已发送");
+    public R<SendCodeVO> sendCode(@RequestParam String phone,
+                                  @RequestParam(required = false) String type) {
+        return R.ok("验证码已发送", userService.sendCode(phone, type));
     }
 
     @Operation(summary = "用户登录")
@@ -65,5 +67,11 @@ public class UserController {
                                               @RequestParam(defaultValue = "10") Integer size,
                                               @RequestParam(required = false) Integer status) {
         return R.ok(userService.getMyOrders(userId, page, size, status));
+    }
+
+    @Operation(summary = "我的订单详情")
+    @GetMapping("/orders/{id}")
+    public R<OrderVO> orderDetail(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        return R.ok(userService.getMyOrderDetail(userId, id));
     }
 }

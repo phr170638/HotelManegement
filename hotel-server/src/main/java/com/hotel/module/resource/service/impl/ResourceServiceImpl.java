@@ -20,6 +20,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -109,6 +110,7 @@ public class ResourceServiceImpl implements ResourceService {
         List<HotelVO> records = result.getRecords().stream().map(h -> {
             HotelVO vo = new HotelVO();
             BeanUtil.copyProperties(h, vo);
+            enrichHotelSummary(vo, h);
             return vo;
         }).toList();
         return new PageResult<>(records, result.getTotal(), (int) result.getCurrent(), (int) result.getSize());
@@ -189,6 +191,39 @@ public class ResourceServiceImpl implements ResourceService {
     @Override
     public void deleteHotel(Long id) {
         hotelMapper.deleteById(id);
+    }
+
+    private void enrichHotelSummary(HotelVO vo, Hotel hotel) {
+        City city = cityMapper.selectById(hotel.getCityId());
+        if (city != null) {
+            vo.setCityName(city.getNameCn());
+        }
+
+        List<HotelImage> images = hotelImageMapper.selectList(
+                new LambdaQueryWrapper<HotelImage>()
+                        .eq(HotelImage::getHotelId, hotel.getId())
+                        .orderByAsc(HotelImage::getSortOrder)
+        );
+        if (!images.isEmpty()) {
+            vo.setMainImage(images.get(0).getUrl());
+        }
+
+        List<HotelFacility> facilities = hotelFacilityMapper.selectList(
+                new LambdaQueryWrapper<HotelFacility>().eq(HotelFacility::getHotelId, hotel.getId())
+        );
+        vo.setFacilities(facilities.stream().map(HotelFacility::getName).limit(4).toList());
+
+        List<Room> rooms = roomMapper.selectList(
+                new LambdaQueryWrapper<Room>()
+                        .eq(Room::getHotelId, hotel.getId())
+                        .eq(Room::getStatus, 1)
+        );
+        Optional<java.math.BigDecimal> minPrice = rooms.stream()
+                .map(Room::getPrice)
+                .filter(java.util.Objects::nonNull)
+                .min(java.math.BigDecimal::compareTo);
+        vo.setMinPrice(minPrice.orElse(null));
+        vo.setReviewCount(0);
     }
 
     // ========== 房型 ==========

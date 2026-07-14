@@ -14,6 +14,8 @@ public interface OrderService {
 
     OrderVO detail(Long orderId);
 
+    OrderVO detailByUser(Long userId, Long orderId);
+
     void cancel(Long userId, Long orderId);
 
     Map<String, Object> preCancel(Long userId, Long orderId);

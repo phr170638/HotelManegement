@@ -21,7 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Service
@@ -38,11 +40,47 @@ public class OrderServiceImpl implements OrderService {
     public OrderVO create(Long userId, OrderCreateRequest req) {
         Hotel hotel = hotelMapper.selectById(req.getHotelId());
         if (hotel == null) throw new BusinessException("酒店不存在");
+        if (req.getCheckInDate() == null || req.getCheckOutDate() == null) {
+            throw new BusinessException("入住和退房日期不能为空");
+        }
+        if (req.getCheckInDate().isBefore(LocalDate.now())) {
+            throw new BusinessException("入住日期不能早于今天");
+        }
+        if (!req.getCheckOutDate().isAfter(req.getCheckInDate())) {
+            throw new BusinessException("退房日期必须晚于入住日期");
+        }
+        if (req.getItems() == null || req.getItems().isEmpty()) {
+            throw new BusinessException("订单明细不能为空");
+        }
 
         // 生成订单号
         String orderNo = DateUtil.format(new Date(), "yyyyMMddHHmmss") + String.format("%06d", new Random().nextInt(999999));
+        long stayNights = ChronoUnit.DAYS.between(req.getCheckInDate(), req.getCheckOutDate());
 
         BigDecimal totalAmount = BigDecimal.ZERO;
+        int totalRoomCount = 0;
+        List<PendingOrderItem> pendingItems = new ArrayList<>();
+
+        for (OrderCreateRequest.OrderItemRequest itemReq : req.getItems()) {
+            Room room = roomMapper.selectById(itemReq.getRoomId());
+            if (room == null) throw new BusinessException("房型不存在");
+            if (!room.getHotelId().equals(req.getHotelId())) throw new BusinessException("所选房型不属于当前酒店");
+            if (!Objects.equals(room.getStatus(), 1)) throw new BusinessException("所选房型当前不可预订");
+
+            int quantity = itemReq.getQuantity() == null ? 1 : itemReq.getQuantity();
+            if (quantity <= 0) throw new BusinessException("房间数量必须大于 0");
+
+            BigDecimal subtotal = room.getPrice()
+                    .multiply(BigDecimal.valueOf(quantity))
+                    .multiply(BigDecimal.valueOf(stayNights));
+            totalAmount = totalAmount.add(subtotal);
+            totalRoomCount += quantity;
+            pendingItems.add(new PendingOrderItem(room.getId(), room.getName(), room.getPrice(), quantity, subtotal));
+        }
+
+        if (totalRoomCount <= 0) {
+            throw new BusinessException("订单房间数量不能为空");
+        }
 
         Order order = new Order();
         order.setOrderNo(orderNo);
@@ -50,33 +88,24 @@ public class OrderServiceImpl implements OrderService {
         order.setHotelId(req.getHotelId());
         order.setCheckInDate(req.getCheckInDate());
         order.setCheckOutDate(req.getCheckOutDate());
-        order.setRoomCount(req.getRoomCount());
+        order.setRoomCount(totalRoomCount);
         order.setGuestName(req.getGuestName());
         order.setGuestPhone(req.getGuestPhone());
+        order.setTotalAmount(totalAmount);
         order.setStatus(0); // 待支付
         order.setCreateTime(LocalDateTime.now());
         orderMapper.insert(order);
 
-        // 保存订单明细
-        for (OrderCreateRequest.OrderItemRequest itemReq : req.getItems()) {
-            Room room = roomMapper.selectById(itemReq.getRoomId());
-            if (room == null) throw new BusinessException("房型不存在");
-
-            BigDecimal subtotal = room.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
-            totalAmount = totalAmount.add(subtotal);
-
+        for (PendingOrderItem pendingItem : pendingItems) {
             OrderItem item = new OrderItem();
             item.setOrderId(order.getId());
-            item.setRoomId(itemReq.getRoomId());
-            item.setRoomName(room.getName());
-            item.setPrice(room.getPrice());
-            item.setQuantity(itemReq.getQuantity());
-            item.setSubtotal(subtotal);
+            item.setRoomId(pendingItem.roomId());
+            item.setRoomName(pendingItem.roomName());
+            item.setPrice(pendingItem.price());
+            item.setQuantity(pendingItem.quantity());
+            item.setSubtotal(pendingItem.subtotal());
             orderItemMapper.insert(item);
         }
-
-        order.setTotalAmount(totalAmount);
-        orderMapper.updateById(order);
 
         return buildOrderVO(order);
     }
@@ -97,6 +126,14 @@ public class OrderServiceImpl implements OrderService {
     public OrderVO detail(Long orderId) {
         Order order = orderMapper.selectById(orderId);
         if (order == null) throw new BusinessException("订单不存在");
+        return buildOrderVO(order);
+    }
+
+    @Override
+    public OrderVO detailByUser(Long userId, Long orderId) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) throw new BusinessException("订单不存在");
+        if (!order.getUserId().equals(userId)) throw new BusinessException("无权查看此订单");
         return buildOrderVO(order);
     }
 
@@ -194,5 +231,8 @@ public class OrderServiceImpl implements OrderService {
             case 6 -> "已完成";
             default -> "未知";
         };
+    }
+
+    private record PendingOrderItem(Long roomId, String roomName, BigDecimal price, Integer quantity, BigDecimal subtotal) {
     }
 }
