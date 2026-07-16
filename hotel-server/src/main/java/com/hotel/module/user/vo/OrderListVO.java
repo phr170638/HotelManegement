@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 public class OrderListVO {
     private Long id;
     private String orderNo;
+    private Long hotelId;
     private String hotelName;
     private String hotelImage;
     private LocalDate checkInDate;

@@ -4,7 +4,6 @@ import cn.hutool.core.date.DateUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hotel.common.exception.BusinessException;
-import lombok.extern.slf4j.Slf4j;
 import com.hotel.common.result.PageResult;
 import com.hotel.module.order.dto.OrderCreateRequest;
 import com.hotel.module.order.entity.Order;
@@ -15,7 +14,6 @@ import com.hotel.module.order.service.OrderService;
 import com.hotel.module.order.vo.OrderVO;
 import com.hotel.module.payment.entity.Payment;
 import com.hotel.module.payment.mapper.PaymentMapper;
-import com.hotel.module.payment.service.AlipayService;
 import com.hotel.module.resource.entity.Hotel;
 import com.hotel.module.resource.entity.Room;
 import com.hotel.module.resource.mapper.HotelMapper;
@@ -25,11 +23,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
@@ -38,7 +36,6 @@ public class OrderServiceImpl implements OrderService {
     private final OrderItemMapper orderItemMapper;
     private final HotelMapper hotelMapper;
     private final RoomMapper roomMapper;
-    private final AlipayService alipayService;
     private final PaymentMapper paymentMapper;
 
     @Override
@@ -46,11 +43,47 @@ public class OrderServiceImpl implements OrderService {
     public OrderVO create(Long userId, OrderCreateRequest req) {
         Hotel hotel = hotelMapper.selectById(req.getHotelId());
         if (hotel == null) throw new BusinessException("酒店不存在");
+        if (req.getCheckInDate() == null || req.getCheckOutDate() == null) {
+            throw new BusinessException("入住和退房日期不能为空");
+        }
+        if (req.getCheckInDate().isBefore(LocalDate.now())) {
+            throw new BusinessException("入住日期不能早于今天");
+        }
+        if (!req.getCheckOutDate().isAfter(req.getCheckInDate())) {
+            throw new BusinessException("退房日期必须晚于入住日期");
+        }
+        if (req.getItems() == null || req.getItems().isEmpty()) {
+            throw new BusinessException("订单明细不能为空");
+        }
 
         // 生成订单号
         String orderNo = DateUtil.format(new Date(), "yyyyMMddHHmmss") + String.format("%06d", new Random().nextInt(999999));
+        long stayNights = ChronoUnit.DAYS.between(req.getCheckInDate(), req.getCheckOutDate());
 
         BigDecimal totalAmount = BigDecimal.ZERO;
+        int totalRoomCount = 0;
+        List<PendingOrderItem> pendingItems = new ArrayList<>();
+
+        for (OrderCreateRequest.OrderItemRequest itemReq : req.getItems()) {
+            Room room = roomMapper.selectById(itemReq.getRoomId());
+            if (room == null) throw new BusinessException("房型不存在");
+            if (!room.getHotelId().equals(req.getHotelId())) throw new BusinessException("所选房型不属于当前酒店");
+            if (!Objects.equals(room.getStatus(), 1)) throw new BusinessException("所选房型当前不可预订");
+
+            int quantity = itemReq.getQuantity() == null ? 1 : itemReq.getQuantity();
+            if (quantity <= 0) throw new BusinessException("房间数量必须大于 0");
+
+            BigDecimal subtotal = room.getPrice()
+                    .multiply(BigDecimal.valueOf(quantity))
+                    .multiply(BigDecimal.valueOf(stayNights));
+            totalAmount = totalAmount.add(subtotal);
+            totalRoomCount += quantity;
+            pendingItems.add(new PendingOrderItem(room.getId(), room.getName(), room.getPrice(), quantity, subtotal));
+        }
+
+        if (totalRoomCount <= 0) {
+            throw new BusinessException("订单房间数量不能为空");
+        }
 
         Order order = new Order();
         order.setOrderNo(orderNo);
@@ -58,34 +91,24 @@ public class OrderServiceImpl implements OrderService {
         order.setHotelId(req.getHotelId());
         order.setCheckInDate(req.getCheckInDate());
         order.setCheckOutDate(req.getCheckOutDate());
-        order.setRoomCount(req.getRoomCount());
+        order.setRoomCount(totalRoomCount);
         order.setGuestName(req.getGuestName());
         order.setGuestPhone(req.getGuestPhone());
-        order.setTotalAmount(BigDecimal.ZERO);
+        order.setTotalAmount(totalAmount);
         order.setStatus(0); // 待支付
         order.setCreateTime(LocalDateTime.now());
         orderMapper.insert(order);
 
-        // 保存订单明细
-        for (OrderCreateRequest.OrderItemRequest itemReq : req.getItems()) {
-            Room room = roomMapper.selectById(itemReq.getRoomId());
-            if (room == null) throw new BusinessException("房型不存在");
-
-            BigDecimal subtotal = room.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
-            totalAmount = totalAmount.add(subtotal);
-
+        for (PendingOrderItem pendingItem : pendingItems) {
             OrderItem item = new OrderItem();
             item.setOrderId(order.getId());
-            item.setRoomId(itemReq.getRoomId());
-            item.setRoomName(room.getName());
-            item.setPrice(room.getPrice());
-            item.setQuantity(itemReq.getQuantity());
-            item.setSubtotal(subtotal);
+            item.setRoomId(pendingItem.roomId());
+            item.setRoomName(pendingItem.roomName());
+            item.setPrice(pendingItem.price());
+            item.setQuantity(pendingItem.quantity());
+            item.setSubtotal(pendingItem.subtotal());
             orderItemMapper.insert(item);
         }
-
-        order.setTotalAmount(totalAmount);
-        orderMapper.updateById(order);
 
         return buildOrderVO(order);
     }
@@ -110,6 +133,14 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public OrderVO detailByUser(Long userId, Long orderId) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) throw new BusinessException("订单不存在");
+        if (!order.getUserId().equals(userId)) throw new BusinessException("无权查看此订单");
+        return buildOrderVO(order);
+    }
+
+    @Override
     public void cancel(Long userId, Long orderId) {
         Order order = orderMapper.selectById(orderId);
         if (order == null) throw new BusinessException("订单不存在");
@@ -121,55 +152,61 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @Transactional
+    public void mockPaySuccess(Long userId, Long orderId) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) throw new BusinessException("订单不存在");
+        if (!order.getUserId().equals(userId)) throw new BusinessException("无权操作此订单");
+        if (Objects.equals(order.getStatus(), 1)) {
+            return;
+        }
+        if (!Objects.equals(order.getStatus(), 0)) {
+            throw new BusinessException("当前订单状态不支持直接标记为已支付");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        order.setStatus(1);
+        order.setPayTime(now);
+        orderMapper.updateById(order);
+
+        Payment payment = paymentMapper.selectOne(
+                new LambdaQueryWrapper<Payment>().eq(Payment::getOrderId, orderId).last("limit 1")
+        );
+        if (payment == null) {
+            payment = new Payment();
+            payment.setOrderId(orderId);
+            payment.setCreateTime(now);
+            payment.setPayMethod("ALIPAY");
+        }
+        payment.setAmount(order.getTotalAmount());
+        payment.setStatus(1);
+        payment.setTradeNo("MOCK-" + order.getOrderNo());
+        payment.setPayTime(now);
+
+        if (payment.getId() == null) {
+            paymentMapper.insert(payment);
+        } else {
+            paymentMapper.updateById(payment);
+        }
+    }
+
+    @Override
     public Map<String, Object> preCancel(Long userId, Long orderId) {
+        // TODO: 实际计算退房手续费
         Order order = orderMapper.selectById(orderId);
         if (order == null) throw new BusinessException("订单不存在");
         if (!order.getUserId().equals(userId)) throw new BusinessException("无权操作此订单");
 
-        // 计算退房手续费
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime checkInTime = order.getCheckInDate().atTime(14, 0); // 入住日14:00
-        long hoursUntilCheckIn = ChronoUnit.HOURS.between(now, checkInTime);
-
-        BigDecimal totalAmount = order.getTotalAmount();
-        BigDecimal penaltyRate;
-        String penaltyDesc;
-
-        if (hoursUntilCheckIn <= 0) {
-            // 已过入住时间
-            penaltyRate = BigDecimal.ONE;
-            penaltyDesc = "已超过入住时间，不退款";
-        } else if (hoursUntilCheckIn <= 24) {
-            penaltyRate = BigDecimal.ONE;
-            penaltyDesc = "距入住不足24小时，不退款";
-        } else if (hoursUntilCheckIn <= 72) {
-            penaltyRate = new BigDecimal("0.8");
-            penaltyDesc = "距入住24小时~3天，扣除80%手续费";
-        } else if (hoursUntilCheckIn <= 168) {
-            penaltyRate = new BigDecimal("0.5");
-            penaltyDesc = "距入住3~7天，扣除50%手续费";
-        } else {
-            penaltyRate = BigDecimal.ZERO;
-            penaltyDesc = "距入住7天以上，免手续费";
-        }
-
-        BigDecimal cancelPenalty = totalAmount.multiply(penaltyRate).setScale(2, java.math.RoundingMode.HALF_UP);
-        BigDecimal refundAmount = totalAmount.subtract(cancelPenalty);
-
         String cancelId = "CANCEL-" + UUID.randomUUID().toString().substring(0, 8);
         order.setCancelConfirmId(cancelId);
         order.setStatus(4); // 退房申请中
-        order.setCancelAmount(cancelPenalty);
         orderMapper.updateById(order);
 
         Map<String, Object> result = new HashMap<>();
         result.put("cancelConfirmId", cancelId);
-        result.put("originalAmount", totalAmount);
-        result.put("hoursUntilCheckIn", hoursUntilCheckIn);
-        result.put("penaltyRate", penaltyRate);
-        result.put("penaltyDesc", penaltyDesc);
-        result.put("cancelPenalty", cancelPenalty);
-        result.put("refundAmount", refundAmount);
+        result.put("originalAmount", order.getTotalAmount());
+        result.put("cancelPenalty", BigDecimal.ZERO);
+        result.put("refundAmount", order.getTotalAmount());
         return result;
     }
 
@@ -238,68 +275,6 @@ public class OrderServiceImpl implements OrderService {
         };
     }
 
-    @Override
-    public String getPayForm(Long userId, Long orderId) {
-        Order order = orderMapper.selectById(orderId);
-        if (order == null) throw new BusinessException("订单不存在");
-        if (!order.getUserId().equals(userId)) throw new BusinessException("无权操作此订单");
-        if (order.getStatus() != 0) throw new BusinessException("仅待支付订单可发起支付");
-
-        Hotel hotel = hotelMapper.selectById(order.getHotelId());
-        String subject = hotel != null ? hotel.getNameCn() + " — 酒店预订" : "酒店预订";
-
-        return alipayService.pagePay(order.getOrderNo(),
-                order.getTotalAmount().toString(), subject);
-    }
-
-    @Override
-    @Transactional
-    public void handlePayNotify(Map<String, String> params) {
-        // 1. 验证签名
-        if (!alipayService.verifySignature(params)) {
-            log.error("支付宝回调签名验证失败");
-            throw new BusinessException("签名验证失败");
-        }
-
-        // 2. 只处理交易成功
-        if (!alipayService.isTradeSuccess(params)) {
-            log.info("支付宝回调非交易成功状态: {}", params.get("trade_status"));
-            return;
-        }
-
-        String orderNo = alipayService.extractOrderNo(params);
-        String tradeNo = alipayService.extractTradeNo(params);
-        String amount = alipayService.extractAmount(params);
-
-        // 3. 查找订单
-        Order order = orderMapper.selectOne(
-                new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, orderNo));
-        if (order == null) {
-            log.error("支付宝回调订单不存在: {}", orderNo);
-            throw new BusinessException("订单不存在");
-        }
-
-        // 4. 防止重复通知
-        if (order.getStatus() != 0) {
-            log.info("订单已处理，忽略重复回调: {}", orderNo);
-            return;
-        }
-
-        // 5. 更新订单状态
-        order.setStatus(1); // 已支付
-        order.setPayTime(LocalDateTime.now());
-        orderMapper.updateById(order);
-
-        // 6. 记录支付流水
-        Payment payment = new Payment();
-        payment.setOrderId(order.getId());
-        payment.setTradeNo(tradeNo);
-        payment.setAmount(new BigDecimal(amount));
-        payment.setStatus(1); // 成功
-        payment.setPayMethod("ALIPAY");
-        payment.setPayTime(LocalDateTime.now());
-        paymentMapper.insert(payment);
-
-        log.info("支付成功: orderNo={}, tradeNo={}, amount={}", orderNo, tradeNo, amount);
+    private record PendingOrderItem(Long roomId, String roomName, BigDecimal price, Integer quantity, BigDecimal subtotal) {
     }
 }

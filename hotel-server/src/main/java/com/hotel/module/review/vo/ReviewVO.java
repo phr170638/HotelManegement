@@ -11,6 +11,7 @@ public class ReviewVO {
     private UserInfo user;
     private Integer score;
     private String content;
+    private Boolean anonymous;
     private List<String> images;
     private String reply;
     private LocalDateTime replyTime;

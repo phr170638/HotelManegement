@@ -19,8 +19,8 @@ export const useUserStore = defineStore('user', {
       const data = await loginApi(loginData)
       this.token = data.token
       setToken(data.token)
-      setUser({ id: data.userId, nickname: data.nickname, roles: data.roles })
-      this.userInfo = { id: data.userId, nickname: data.nickname, roles: data.roles }
+      setUser({ id: data.userId, nickname: data.nickname, roles: data.roles, avatar: data.avatar || '' })
+      this.userInfo = { id: data.userId, nickname: data.nickname, roles: data.roles, avatar: data.avatar || '' }
     },
 
     async register(registerData) {
@@ -30,7 +30,15 @@ export const useUserStore = defineStore('user', {
     async fetchUserInfo() {
       const data = await getUserInfo()
       this.userInfo = data
-      setUser({ id: data.id, nickname: data.nickname, roles: data.roles, permissions: data.permissions })
+      setUser({
+        id: data.id,
+        nickname: data.nickname,
+        roles: data.roles,
+        permissions: data.permissions,
+        avatar: data.avatar || '',
+        phone: data.phone || '',
+        email: data.email || ''
+      })
     },
 
     logout() {

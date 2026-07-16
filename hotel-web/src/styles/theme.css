@@ -1,0 +1,204 @@
+:root {
+  color-scheme: light;
+  --bg-page: #f5f0e8;
+  --bg-panel: rgba(255, 251, 245, 0.9);
+  --bg-panel-strong: #fffdf8;
+  --bg-dark: #615247;
+  --bg-dark-soft: #7b6857;
+  --text-primary: #3f342c;
+  --text-secondary: #6f6258;
+  --text-muted: #9a8e84;
+  --border-soft: rgba(97, 82, 71, 0.12);
+  --border-strong: rgba(175, 142, 104, 0.3);
+  --brand-primary: #6d5a4b;
+  --brand-secondary: #b89567;
+  --brand-secondary-strong: #9c7748;
+  --brand-success: #58795d;
+  --brand-warning: #bf7d32;
+  --brand-danger: #b35b4c;
+  --shadow-soft: 0 18px 40px rgba(81, 63, 44, 0.08);
+  --shadow-card: 0 18px 34px rgba(88, 68, 47, 0.12);
+  --radius-xl: 28px;
+  --radius-lg: 20px;
+  --radius-md: 16px;
+  --radius-sm: 12px;
+  --container-width: 1200px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  font-family: "HarmonyOS Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.5;
+  color: var(--text-primary);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(circle at top left, rgba(184, 149, 103, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(109, 90, 75, 0.1), transparent 24%),
+    linear-gradient(180deg, #faf6f0 0%, var(--bg-page) 100%);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.2s ease, opacity 0.2s ease;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid rgba(184, 149, 103, 0.8);
+  outline-offset: 2px;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.page-section,
+.page-container {
+  width: min(var(--container-width), calc(100vw - 32px));
+  margin: 0 auto;
+}
+
+.page-container.narrow {
+  width: min(960px, calc(100vw - 32px));
+}
+
+.glass-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-soft);
+  backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-soft);
+}
+
+.soft-card {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-card);
+}
+
+.page-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 32px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 48px);
+  line-height: 1.08;
+  letter-spacing: 0.02em;
+}
+
+.page-subtitle {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.8;
+  color: rgba(247, 243, 238, 0.9);
+}
+
+.section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.section-heading h2 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.section-heading p {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.gold-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(184, 149, 103, 0.16);
+  color: var(--brand-secondary-strong);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(49, 38, 28, 0.68), rgba(109, 90, 75, 0.36)),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.14));
+}
+
+.image-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(109, 90, 75, 0.22);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(109, 90, 75, 0.05);
+}
+
+@media (max-width: 900px) {
+  .page-section,
+  .page-container,
+  .page-container.narrow {
+    width: min(100vw - 24px, var(--container-width));
+  }
+
+  .section-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

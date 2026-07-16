@@ -4,8 +4,12 @@ export function createOrder(data) {
   return request.post('/order/create', data)
 }
 
-export function payOrder(id) {
-  return request.post(`/order/${id}/pay`)
+export function payOrder(id, config = {}) {
+  return request.post(`/order/${id}/pay`, null, config)
+}
+
+export function mockPaySuccess(id) {
+  return request.post(`/order/${id}/mock-pay-success`)
 }
 
 export function cancelOrder(id) {
@@ -21,8 +25,8 @@ export function confirmCancelOrder(id, cancelConfirmId) {
 }
 
 // 管理端
-export function getAdminOrders(params) {
-  return request.get('/admin/orders', { params })
+export function getAdminOrders(params, config = {}) {
+  return request.get('/admin/orders', { params, ...config })
 }
 
 export function refundOrder(id, reason) {

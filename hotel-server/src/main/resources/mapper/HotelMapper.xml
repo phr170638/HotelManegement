@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hotel.module.resource.mapper.HotelMapper">
+
+    <!-- 搜索结果列映射 -->
+    <resultMap id="SearchResultMap" type="com.hotel.module.resource.entity.Hotel">
+        <id column="id" property="id"/>
+        <result column="city_id" property="cityId"/>
+        <result column="name_cn" property="nameCn"/>
+        <result column="name_en" property="nameEn"/>
+        <result column="address" property="address"/>
+        <result column="longitude" property="longitude"/>
+        <result column="latitude" property="latitude"/>
+        <result column="star_level" property="starLevel"/>
+        <result column="brand" property="brand"/>
+        <result column="description" property="description"/>
+        <result column="score" property="score"/>
+        <result column="status" property="status"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- 酒店搜索 -->
+    <select id="searchHotels" resultMap="SearchResultMap">
+        SELECT h.*
+        FROM t_hotel h
+        LEFT JOIN (
+            SELECT hotel_id, MIN(price) AS min_price
+            FROM t_room
+            WHERE status = 1
+            GROUP BY hotel_id
+        ) room_price ON h.id = room_price.hotel_id
+        WHERE h.status = 1
+        <if test="req.cityId != null">
+            AND h.city_id = #{req.cityId}
+        </if>
+        <if test="req.keyword != null and req.keyword != ''">
+            AND (h.name_cn LIKE CONCAT('%', #{req.keyword}, '%')
+            OR h.name_en LIKE CONCAT('%', #{req.keyword}, '%')
+            OR h.address LIKE CONCAT('%', #{req.keyword}, '%')
+            OR h.brand LIKE CONCAT('%', #{req.keyword}, '%'))
+        </if>
+        <if test="req.starLevel != null">
+            AND h.star_level = #{req.starLevel}
+        </if>
+        <if test="req.minPrice != null">
+            AND room_price.min_price &gt;= #{req.minPrice}
+        </if>
+        <if test="req.maxPrice != null">
+            AND room_price.min_price &lt;= #{req.maxPrice}
+        </if>
+        <if test="req.score != null">
+            AND h.score &gt;= #{req.score}
+        </if>
+        <choose>
+            <when test="req.sortBy == 'price'">
+                ORDER BY COALESCE(room_price.min_price, 99999999) ASC, h.score DESC, h.create_time DESC
+            </when>
+            <when test="req.sortBy == 'score'">
+                ORDER BY h.score DESC, h.create_time DESC
+            </when>
+            <otherwise>
+                ORDER BY h.score DESC, h.create_time DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <!-- 酒店详情 -->
+    <select id="selectDetailById" resultMap="SearchResultMap">
+        SELECT h.*, c.name_cn AS city_name
+        FROM t_hotel h
+        LEFT JOIN t_city c ON h.city_id = c.id
+        WHERE h.id = #{id}
+    </select>
+
+</mapper>

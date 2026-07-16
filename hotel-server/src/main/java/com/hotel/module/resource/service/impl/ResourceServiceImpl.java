@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hotel.common.exception.BusinessException;
 import com.hotel.common.result.PageResult;
+import com.hotel.module.review.mapper.ReviewMapper;
 import com.hotel.module.resource.dto.HotelSaveRequest;
 import com.hotel.module.resource.dto.RoomSaveRequest;
 import com.hotel.module.resource.entity.*;
@@ -20,6 +21,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -36,6 +38,7 @@ public class ResourceServiceImpl implements ResourceService {
     private final RoomFacilityMapper roomFacilityMapper;
     private final BedTypeMapper bedTypeMapper;
     private final BreakfastMapper breakfastMapper;
+    private final ReviewMapper reviewMapper;
 
     // ========== 国家 ==========
 
@@ -66,11 +69,6 @@ public class ResourceServiceImpl implements ResourceService {
 
     @Override
     public void deleteCountry(Long id) {
-        long cityCount = cityMapper.selectCount(
-                new LambdaQueryWrapper<City>().eq(City::getCountryId, id));
-        if (cityCount > 0) {
-            throw new BusinessException("该国家下存在城市，无法删除");
-        }
         countryMapper.deleteById(id);
     }
 
@@ -97,14 +95,7 @@ public class ResourceServiceImpl implements ResourceService {
     public void updateCity(City city) { cityMapper.updateById(city); }
 
     @Override
-    public void deleteCity(Long id) {
-        long hotelCount = hotelMapper.selectCount(
-                new LambdaQueryWrapper<Hotel>().eq(Hotel::getCityId, id));
-        if (hotelCount > 0) {
-            throw new BusinessException("该城市下存在酒店，无法删除");
-        }
-        cityMapper.deleteById(id);
-    }
+    public void deleteCity(Long id) { cityMapper.deleteById(id); }
 
     // ========== 酒店 ==========
 
@@ -114,13 +105,22 @@ public class ResourceServiceImpl implements ResourceService {
         wrapper.eq(Hotel::getStatus, 1);
         if (cityId != null) wrapper.eq(Hotel::getCityId, cityId);
         if (starLevel != null) wrapper.eq(Hotel::getStarLevel, starLevel);
-        if (StringUtils.hasText(keyword)) wrapper.like(Hotel::getNameCn, keyword);
+        if (StringUtils.hasText(keyword)) {
+            wrapper.and(query -> query.like(Hotel::getNameCn, keyword)
+                    .or()
+                    .like(Hotel::getNameEn, keyword)
+                    .or()
+                    .like(Hotel::getBrand, keyword)
+                    .or()
+                    .like(Hotel::getAddress, keyword));
+        }
         wrapper.orderByDesc(Hotel::getScore);
 
         IPage<Hotel> result = hotelMapper.selectPage(new Page<>(page, size), wrapper);
         List<HotelVO> records = result.getRecords().stream().map(h -> {
             HotelVO vo = new HotelVO();
             BeanUtil.copyProperties(h, vo);
+            enrichHotelSummary(vo, h);
             return vo;
         }).toList();
         return new PageResult<>(records, result.getTotal(), (int) result.getCurrent(), (int) result.getSize());
@@ -154,6 +154,7 @@ public class ResourceServiceImpl implements ResourceService {
 
         // 房型
         vo.setRooms(listRoomsByHotelId(id));
+        applyReviewSummary(vo, hotel);
 
         return vo;
     }
@@ -163,6 +164,7 @@ public class ResourceServiceImpl implements ResourceService {
     public void saveHotel(HotelSaveRequest req) {
         Hotel hotel = new Hotel();
         BeanUtil.copyProperties(req, hotel);
+        normalizeHotelFields(hotel);
         hotel.setStatus(1);
         hotel.setScore(java.math.BigDecimal.ZERO);
         hotelMapper.insert(hotel);
@@ -191,54 +193,73 @@ public class ResourceServiceImpl implements ResourceService {
     }
 
     @Override
-    @Transactional
     public void updateHotel(Long id, HotelSaveRequest req) {
         Hotel hotel = hotelMapper.selectById(id);
         if (hotel == null) throw new BusinessException("酒店不存在");
         BeanUtil.copyProperties(req, hotel, "id");
+        normalizeHotelFields(hotel);
         hotelMapper.updateById(hotel);
-
-        // 图片：删旧插新
-        if (req.getImageUrls() != null) {
-            hotelImageMapper.delete(new LambdaQueryWrapper<HotelImage>().eq(HotelImage::getHotelId, id));
-            for (int i = 0; i < req.getImageUrls().size(); i++) {
-                HotelImage img = new HotelImage();
-                img.setHotelId(id);
-                img.setUrl(req.getImageUrls().get(i));
-                img.setType(i == 0 ? 1 : 4);
-                img.setSortOrder(i);
-                hotelImageMapper.insert(img);
-            }
-        }
-
-        // 设施：删旧插新
-        if (req.getFacilities() != null) {
-            hotelFacilityMapper.delete(new LambdaQueryWrapper<HotelFacility>().eq(HotelFacility::getHotelId, id));
-            for (String name : req.getFacilities()) {
-                HotelFacility facility = new HotelFacility();
-                facility.setHotelId(id);
-                facility.setName(name);
-                hotelFacilityMapper.insert(facility);
-            }
-        }
     }
 
     @Override
-    @Transactional
     public void deleteHotel(Long id) {
-        // 级联删除：房型图片 → 房型设施 → 房型
-        List<Room> rooms = roomMapper.selectList(
-                new LambdaQueryWrapper<Room>().eq(Room::getHotelId, id));
-        for (Room room : rooms) {
-            roomImageMapper.delete(new LambdaQueryWrapper<RoomImage>().eq(RoomImage::getRoomId, room.getId()));
-            roomFacilityMapper.delete(new LambdaQueryWrapper<RoomFacility>().eq(RoomFacility::getRoomId, room.getId()));
-            roomMapper.deleteById(room.getId());
+        hotelMapper.deleteById(id);
+    }
+
+    private void enrichHotelSummary(HotelVO vo, Hotel hotel) {
+        City city = cityMapper.selectById(hotel.getCityId());
+        if (city != null) {
+            vo.setCityName(city.getNameCn());
         }
 
-        // 级联删除：酒店图片、酒店设施、酒店本身
-        hotelImageMapper.delete(new LambdaQueryWrapper<HotelImage>().eq(HotelImage::getHotelId, id));
-        hotelFacilityMapper.delete(new LambdaQueryWrapper<HotelFacility>().eq(HotelFacility::getHotelId, id));
-        hotelMapper.deleteById(id);
+        List<HotelImage> images = hotelImageMapper.selectList(
+                new LambdaQueryWrapper<HotelImage>()
+                        .eq(HotelImage::getHotelId, hotel.getId())
+                        .orderByAsc(HotelImage::getSortOrder)
+        );
+        if (!images.isEmpty()) {
+            vo.setMainImage(images.get(0).getUrl());
+        }
+
+        List<HotelFacility> facilities = hotelFacilityMapper.selectList(
+                new LambdaQueryWrapper<HotelFacility>().eq(HotelFacility::getHotelId, hotel.getId())
+        );
+        vo.setFacilities(facilities.stream().map(HotelFacility::getName).limit(4).toList());
+
+        List<Room> rooms = roomMapper.selectList(
+                new LambdaQueryWrapper<Room>()
+                        .eq(Room::getHotelId, hotel.getId())
+                        .eq(Room::getStatus, 1)
+        );
+        Optional<java.math.BigDecimal> minPrice = rooms.stream()
+                .map(Room::getPrice)
+                .filter(java.util.Objects::nonNull)
+                .min(java.math.BigDecimal::compareTo);
+        vo.setMinPrice(minPrice.orElse(null));
+        applyReviewSummary(vo, hotel);
+    }
+
+    private void applyReviewSummary(HotelVO vo, Hotel hotel) {
+        Integer reviewCount = reviewMapper.countByHotelId(hotel.getId());
+        vo.setReviewCount(reviewCount == null ? 0 : reviewCount);
+
+        java.math.BigDecimal avgScore = reviewMapper.avgScoreByHotelId(hotel.getId());
+        vo.setScore(avgScore != null ? avgScore : hotel.getScore());
+    }
+
+    private void normalizeHotelFields(Hotel hotel) {
+        hotel.setNameCn(normalizeText(hotel.getNameCn()));
+        hotel.setNameEn(normalizeText(hotel.getNameEn()));
+        hotel.setAddress(normalizeText(hotel.getAddress()));
+        hotel.setBrand(normalizeText(hotel.getBrand()));
+        hotel.setDescription(normalizeText(hotel.getDescription()));
+    }
+
+    private String normalizeText(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
     }
 
     // ========== 房型 ==========
@@ -287,10 +308,7 @@ public class ResourceServiceImpl implements ResourceService {
     }
 
     @Override
-    @Transactional
     public void deleteRoom(Long id) {
-        roomImageMapper.delete(new LambdaQueryWrapper<RoomImage>().eq(RoomImage::getRoomId, id));
-        roomFacilityMapper.delete(new LambdaQueryWrapper<RoomFacility>().eq(RoomFacility::getRoomId, id));
         roomMapper.deleteById(id);
     }
 

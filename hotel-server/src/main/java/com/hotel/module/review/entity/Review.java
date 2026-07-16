@@ -17,6 +17,7 @@ public class Review {
     private Long orderId;
     private Integer score;
     private String content;
+    private Boolean anonymous;
     private String images;
     private String reply;
     private LocalDateTime replyTime;

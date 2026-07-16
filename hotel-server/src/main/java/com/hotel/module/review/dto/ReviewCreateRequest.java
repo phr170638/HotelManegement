@@ -18,8 +18,9 @@ public class ReviewCreateRequest {
     @NotNull(message = "评分不能为空")
     private Integer score;
 
-    @NotNull(message = "评价内容不能为空")
     private String content;
 
     private List<String> images;
+
+    private Boolean anonymous;
 }

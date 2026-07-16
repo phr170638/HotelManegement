@@ -35,3 +35,4 @@ application-local.yml
 
 # Build output
 hotel-web/dist/
+.dbg/

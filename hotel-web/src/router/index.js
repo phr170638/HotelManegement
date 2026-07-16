@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getToken } from '@/utils/auth'
+import { hasRole } from '@/utils/auth'
 
 const routes = [
   {
@@ -30,6 +31,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/order/result',
+    name: 'OrderResult',
+    component: () => import('@/views/order/result.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/user/login.vue'),
@@ -57,6 +64,7 @@ const routes = [
     path: '/admin',
     name: 'AdminLayout',
     component: () => import('@/views/admin/Layout.vue'),
+    redirect: '/admin/hotels',
     meta: { requiresAuth: true, role: 'admin' },
     children: [
       {
@@ -75,6 +83,11 @@ const routes = [
         component: () => import('@/views/admin/Users.vue')
       }
     ]
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/NotFound.vue')
   }
 ]
 
@@ -88,6 +101,8 @@ router.beforeEach((to, from, next) => {
   const token = getToken()
   if (to.meta.requiresAuth && !token) {
     next({ name: 'Login', query: { redirect: to.fullPath } })
+  } else if (to.meta.role === 'admin' && !hasRole('admin')) {
+    next({ name: 'Home' })
   } else if (to.meta.guest && token) {
     next({ name: 'Home' })
   } else {

@@ -8,6 +8,8 @@ import java.util.List;
 @Data
 public class HotelSearchVO {
     private Long id;
+    private Long cityId;
+    private String cityName;
     private String nameCn;
     private String nameEn;
     private String mainImage;

@@ -1,8 +1,10 @@
 server:
-  port: 8080
+  port: 8090
 
 spring:
   application:
     name: hotel-management
   profiles:
     active: dev
+  config:
+    import: optional:file:./application-local.yml,optional:file:./hotel-server/application-local.yml,optional:file:../application-local.yml,optional:file:${user.dir}/application-local.yml,optional:file:${user.dir}/hotel-server/application-local.yml,optional:file:${user.dir}/HotelManegement-main/hotel-server/application-local.yml

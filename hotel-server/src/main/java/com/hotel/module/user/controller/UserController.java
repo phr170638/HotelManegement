@@ -8,13 +8,16 @@ import com.hotel.module.user.dto.UpdateUserRequest;
 import com.hotel.module.user.service.UserService;
 import com.hotel.module.user.vo.LoginVO;
 import com.hotel.module.user.vo.OrderListVO;
+import com.hotel.module.user.vo.SendCodeVO;
 import com.hotel.module.user.vo.UserVO;
+import com.hotel.module.order.vo.OrderVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @Tag(name = "用户模块", description = "注册、登录、个人信息")
 @RestController
@@ -33,10 +36,9 @@ public class UserController {
 
     @Operation(summary = "发送验证码")
     @PostMapping("/send-code")
-    public R<Void> sendCode(@RequestParam String email,
-                             @RequestParam(defaultValue = "register") String type) {
-        userService.sendCode(email, type);
-        return R.okMsg("验证码已发送");
+    public R<SendCodeVO> sendCode(@RequestParam String phone,
+                                  @RequestParam(required = false) String type) {
+        return R.ok("验证码已发送", userService.sendCode(phone, type));
     }
 
     @Operation(summary = "用户登录")
@@ -59,6 +61,13 @@ public class UserController {
         return R.ok();
     }
 
+    @Operation(summary = "上传用户头像")
+    @PostMapping("/avatar")
+    public R<String> uploadAvatar(@AuthenticationPrincipal Long userId,
+                                  @RequestPart("file") MultipartFile file) {
+        return R.ok(userService.uploadAvatar(userId, file));
+    }
+
     @Operation(summary = "我的订单列表")
     @GetMapping("/orders")
     public R<PageResult<OrderListVO>> orders(@AuthenticationPrincipal Long userId,
@@ -68,9 +77,9 @@ public class UserController {
         return R.ok(userService.getMyOrders(userId, page, size, status));
     }
 
-    @Operation(summary = "根据id获取订单详情")
+    @Operation(summary = "我的订单详情")
     @GetMapping("/orders/{id}")
-    public R<OrderListVO> order(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
-        return R.ok(userService.getOrderById(userId, id));
+    public R<OrderVO> orderDetail(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        return R.ok(userService.getMyOrderDetail(userId, id));
     }
 }

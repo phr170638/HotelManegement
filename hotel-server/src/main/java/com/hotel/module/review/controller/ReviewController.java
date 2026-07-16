@@ -41,8 +41,8 @@ public class ReviewController {
     }
 
     @Operation(summary = "商家回复（管理端）")
-    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}/reply")
+    @PreAuthorize("hasRole('ADMIN')")
     public R<Void> reply(@PathVariable Long id, @RequestBody Map<String, String> body) {
         reviewService.reply(id, body.get("reply"));
         return R.ok();
