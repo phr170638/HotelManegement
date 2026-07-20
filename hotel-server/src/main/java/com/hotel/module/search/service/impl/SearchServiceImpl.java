@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -73,8 +74,55 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public List<HotelSearchVO> nearby(String longitude, String latitude, Integer radius) {
-        // TODO: 实现地理位置范围搜索（需集成高德/百度地图API）
-        return Collections.emptyList();
+        double targetLng = Double.parseDouble(longitude);
+        double targetLat = Double.parseDouble(latitude);
+        double maxDistanceKm = radius == null ? 5D : radius.doubleValue();
+
+        List<Hotel> hotels = hotelMapper.selectList(new LambdaQueryWrapper<Hotel>()
+                .eq(Hotel::getStatus, 1)
+                .isNotNull(Hotel::getLongitude)
+                .isNotNull(Hotel::getLatitude));
+
+        return hotels.stream()
+                .filter(hotel -> calculateDistanceKm(
+                        targetLat,
+                        targetLng,
+                        hotel.getLatitude().doubleValue(),
+                        hotel.getLongitude().doubleValue()
+                ) <= maxDistanceKm)
+                .sorted(Comparator.comparingDouble(hotel -> calculateDistanceKm(
+                        targetLat,
+                        targetLng,
+                        hotel.getLatitude().doubleValue(),
+                        hotel.getLongitude().doubleValue()
+                )))
+                .map(h -> {
+                    HotelSearchVO vo = new HotelSearchVO();
+                    vo.setId(h.getId());
+                    vo.setCityId(h.getCityId());
+                    vo.setNameCn(h.getNameCn());
+                    vo.setNameEn(h.getNameEn());
+                    vo.setStarLevel(h.getStarLevel());
+                    vo.setScore(h.getScore());
+                    vo.setAddress(h.getAddress());
+                    vo.setLongitude(h.getLongitude());
+                    vo.setLatitude(h.getLatitude());
+                    vo.setBrand(h.getBrand());
+                    enrichSearchSummary(vo, h);
+                    return vo;
+                })
+                .toList();
+    }
+
+    private double calculateDistanceKm(double lat1, double lng1, double lat2, double lng2) {
+        double earthRadiusKm = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return earthRadiusKm * c;
     }
 
     private void enrichSearchSummary(HotelSearchVO vo, Hotel hotel) {

@@ -37,15 +37,18 @@ class SearchControllerTest {
     @Autowired private ReviewMapper reviewMapper;
     @Autowired private CityMapper cityMapper;
 
-    private static final String ADMIN_PASSWORD = "admin123";
+    private static final String[][] ADMIN_CREDENTIALS = {
+            {"17727974960", "ycj20050908"},
+            {"13800000000", "admin123"},
+            {"13800000001", "admin123"}
+    };
 
     @BeforeAll
     void loginAsAdmin() throws Exception {
-        String[] phones = {"13800000000", "13800000001"};
-        for (String phone : phones) {
+        for (String[] credential : ADMIN_CREDENTIALS) {
             LoginRequest req = new LoginRequest();
-            req.setPhone(phone);
-            req.setPassword(ADMIN_PASSWORD);
+            req.setPhone(credential[0]);
+            req.setPassword(credential[1]);
 
             String response = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/user/login")
                             .contentType(org.springframework.http.MediaType.APPLICATION_JSON)

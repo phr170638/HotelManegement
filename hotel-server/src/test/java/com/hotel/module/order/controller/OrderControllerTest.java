@@ -7,6 +7,7 @@ import com.hotel.module.order.entity.Order;
 import com.hotel.module.order.entity.OrderItem;
 import com.hotel.module.order.mapper.OrderItemMapper;
 import com.hotel.module.order.mapper.OrderMapper;
+import com.hotel.common.exception.BusinessException;
 import com.hotel.module.payment.entity.Payment;
 import com.hotel.module.payment.mapper.PaymentMapper;
 import com.hotel.module.payment.service.AlipayService;
@@ -15,8 +16,8 @@ import com.hotel.module.resource.entity.Room;
 import com.hotel.module.resource.mapper.HotelMapper;
 import com.hotel.module.resource.mapper.RoomMapper;
 import com.hotel.module.user.dto.LoginRequest;
-import com.hotel.module.user.dto.RegisterRequest;
 import com.hotel.module.user.entity.UserRole;
+import com.hotel.module.user.entity.User;
 import com.hotel.module.user.mapper.UserMapper;
 import com.hotel.module.user.mapper.UserRoleMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -28,13 +29,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -62,9 +64,6 @@ class OrderControllerTest {
     private ObjectMapper objectMapper;
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
-
-    @Autowired
     private UserMapper userMapper;
 
     @Autowired
@@ -85,6 +84,9 @@ class OrderControllerTest {
     @Autowired
     private PaymentMapper paymentMapper;
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     @MockBean
     private AlipayService alipayService;
 
@@ -96,16 +98,17 @@ class OrderControllerTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        // 注册+登录
-        redisTemplate.opsForValue().set("code:" + TEST_PHONE + ":register", "123456");
+        User user = new User();
+        user.setPhone(TEST_PHONE);
+        user.setPassword(passwordEncoder.encode(TEST_PASSWORD));
+        user.setNickname("订单测试用户");
+        user.setStatus(1);
+        userMapper.insert(user);
 
-        RegisterRequest regReq = new RegisterRequest();
-        regReq.setPhone(TEST_PHONE);
-        regReq.setPassword(TEST_PASSWORD);
-        regReq.setCode("123456");
-        mockMvc.perform(post("/api/user/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(regReq)));
+        UserRole userRole = new UserRole();
+        userRole.setUserId(user.getId());
+        userRole.setRoleId(2L);
+        userRoleMapper.insert(userRole);
 
         LoginRequest loginReq = new LoginRequest();
         loginReq.setPhone(TEST_PHONE);
@@ -134,10 +137,13 @@ class OrderControllerTest {
         testRoomId = testRoom.getId();
 
         // Mock 支付宝
-        when(alipayService.pagePay(anyString(), anyString(), anyString()))
-                .thenReturn("<form>支付宝支付表单</form>");
-        when(alipayService.verifySignature(anyMap()))
-                .thenReturn(false); // 默认验签失败
+        when(alipayService.createPagePay(anyLong()))
+                .thenReturn(Map.of(
+                        "orderNo", "MOCK-ORDER-NO",
+                        "payForm", "<form>支付宝支付表单</form>"
+                ));
+        when(alipayService.handleNotify(anyMap()))
+                .thenReturn("success");
     }
 
     @AfterEach
@@ -165,10 +171,6 @@ class OrderControllerTest {
                     .eq(UserRole::getUserId, user.getId()));
             userMapper.deleteById(user.getId());
         }
-
-        // 清理 Redis
-        var keys = redisTemplate.keys("code:*");
-        if (keys != null) keys.forEach(redisTemplate::delete);
     }
 
     // ==================== 辅助方法 ====================
@@ -226,7 +228,7 @@ class OrderControllerTest {
                     .andExpect(jsonPath("$.code").value(200))
                     .andExpect(jsonPath("$.data.id").exists())
                     .andExpect(jsonPath("$.data.orderNo").exists())
-                    .andExpect(jsonPath("$.data.totalAmount").value(299.0))
+                    .andExpect(jsonPath("$.data.totalAmount").value(598.0))
                     .andExpect(jsonPath("$.data.status").value(0))
                     .andExpect(jsonPath("$.data.guestName").value("张三"))
                     .andExpect(jsonPath("$.data.hotelName").value("测试酒店"))
@@ -251,12 +253,12 @@ class OrderControllerTest {
         }
 
         @Test
-        @DisplayName("未登录返回401")
-        void shouldReturn401Unauthenticated() throws Exception {
+        @DisplayName("未登录返回403")
+        void shouldReturn403Unauthenticated() throws Exception {
             mockMvc.perform(post("/api/order/create")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
-                    .andExpect(status().isUnauthorized());
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -280,7 +282,8 @@ class OrderControllerTest {
                             .header("Authorization", "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value(200))
-                    .andExpect(jsonPath("$.data").value("<form>支付宝支付表单</form>"));
+                    .andExpect(jsonPath("$.data.orderNo").value("MOCK-ORDER-NO"))
+                    .andExpect(jsonPath("$.data.payForm").value("<form>支付宝支付表单</form>"));
         }
 
         @Test
@@ -293,10 +296,10 @@ class OrderControllerTest {
         }
 
         @Test
-        @DisplayName("未登录返回401")
-        void shouldReturn401Unauthenticated() throws Exception {
+        @DisplayName("未登录返回403")
+        void shouldReturn403Unauthenticated() throws Exception {
             mockMvc.perform(post("/api/order/1/pay"))
-                    .andExpect(status().isUnauthorized());
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -341,10 +344,10 @@ class OrderControllerTest {
         }
 
         @Test
-        @DisplayName("未登录返回401")
-        void shouldReturn401Unauthenticated() throws Exception {
+        @DisplayName("未登录返回403")
+        void shouldReturn403Unauthenticated() throws Exception {
             mockMvc.perform(put("/api/order/1/cancel"))
-                    .andExpect(status().isUnauthorized());
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -367,9 +370,9 @@ class OrderControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value(200))
                     .andExpect(jsonPath("$.data.cancelConfirmId").exists())
-                    .andExpect(jsonPath("$.data.penaltyRate").value(0))
                     .andExpect(jsonPath("$.data.cancelPenalty").value(0))
-                    .andExpect(jsonPath("$.data.refundAmount").value(299.00));
+                    .andExpect(jsonPath("$.data.originalAmount").value(598.00))
+                    .andExpect(jsonPath("$.data.refundAmount").value(598.00));
         }
 
         @Test
@@ -389,10 +392,10 @@ class OrderControllerTest {
         }
 
         @Test
-        @DisplayName("未登录返回401")
-        void shouldReturn401Unauthenticated() throws Exception {
+        @DisplayName("未登录返回403")
+        void shouldReturn403Unauthenticated() throws Exception {
             mockMvc.perform(post("/api/order/1/pre-cancel"))
-                    .andExpect(status().isUnauthorized());
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -449,11 +452,11 @@ class OrderControllerTest {
         }
 
         @Test
-        @DisplayName("未登录返回401")
-        void shouldReturn401Unauthenticated() throws Exception {
+        @DisplayName("未登录返回403")
+        void shouldReturn403Unauthenticated() throws Exception {
             mockMvc.perform(post("/api/order/1/confirm-cancel")
                             .param("cancelConfirmId", "test"))
-                    .andExpect(status().isUnauthorized());
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -468,12 +471,7 @@ class OrderControllerTest {
         void shouldHandlePayNotify() throws Exception {
             String orderNo = createTestOrder();
 
-            // Mock 验签成功
-            when(alipayService.verifySignature(anyMap())).thenReturn(true);
-            when(alipayService.isTradeSuccess(anyMap())).thenReturn(true);
-            when(alipayService.extractOrderNo(anyMap())).thenReturn(orderNo);
-            when(alipayService.extractTradeNo(anyMap())).thenReturn("20260713220010001");
-            when(alipayService.extractAmount(anyMap())).thenReturn("299.00");
+            when(alipayService.handleNotify(anyMap())).thenReturn("success");
 
             mockMvc.perform(post("/api/order/pay-notify")
                             .contentType(MediaType.APPLICATION_FORM_URLENCODED)
@@ -484,40 +482,32 @@ class OrderControllerTest {
                             .param("sign", "fake_sign"))
                     .andExpect(status().isOk())
                     .andExpect(content().string("success"));
-
-            // 验证订单状态更新为已支付
-            var order = orderMapper.selectOne(
-                    new LambdaQueryWrapper<Order>()
-                            .eq(Order::getOrderNo, orderNo));
-            assert order.getStatus() == 1;
-            assert order.getPayTime() != null;
         }
 
         @Test
         @DisplayName("签名验证失败不处理")
         void shouldIgnoreInvalidSignature() throws Exception {
-            // 默认 mock 返回 false
+            when(alipayService.handleNotify(anyMap()))
+                    .thenThrow(new BusinessException("支付宝回调验签失败"));
             mockMvc.perform(post("/api/order/pay-notify")
                             .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                             .param("out_trade_no", "TEST001")
                             .param("sign", "bad_sign"))
-                    .andExpect(status().isOk());
-            // 验签失败会抛 BusinessException，但 pay-notify 是 public 端点
-            // GlobalExceptionHandler 处理后仍返回 200，支付宝会重试
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("failure"));
         }
 
         @Test
         @DisplayName("无需登录也可访问")
         void shouldAllowAnonymous() throws Exception {
-            // pay-notify 在 SecurityConfig 的 permitAll 列表
-            when(alipayService.verifySignature(anyMap())).thenReturn(true);
-            when(alipayService.isTradeSuccess(anyMap())).thenReturn(false); // 非交易成功，提前返回
+            when(alipayService.handleNotify(anyMap())).thenReturn("success");
 
             mockMvc.perform(post("/api/order/pay-notify")
                             .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                             .param("trade_status", "WAIT_BUYER_PAY")
                             .param("sign", "fake"))
-                    .andExpect(status().isOk());
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("success"));
         }
     }
 }

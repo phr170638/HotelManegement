@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hotel.common.exception.BusinessException;
 import com.hotel.common.result.PageResult;
+import com.hotel.module.review.entity.Review;
 import com.hotel.module.review.mapper.ReviewMapper;
 import com.hotel.module.resource.dto.HotelSaveRequest;
 import com.hotel.module.resource.dto.RoomSaveRequest;
@@ -68,7 +69,12 @@ public class ResourceServiceImpl implements ResourceService {
     }
 
     @Override
+    @Transactional
     public void deleteCountry(Long id) {
+        Long cityCount = cityMapper.selectCount(new LambdaQueryWrapper<City>().eq(City::getCountryId, id));
+        if (cityCount != null && cityCount > 0) {
+            throw new BusinessException("当前国家下存在城市，无法删除");
+        }
         countryMapper.deleteById(id);
     }
 
@@ -95,7 +101,14 @@ public class ResourceServiceImpl implements ResourceService {
     public void updateCity(City city) { cityMapper.updateById(city); }
 
     @Override
-    public void deleteCity(Long id) { cityMapper.deleteById(id); }
+    @Transactional
+    public void deleteCity(Long id) {
+        Long hotelCount = hotelMapper.selectCount(new LambdaQueryWrapper<Hotel>().eq(Hotel::getCityId, id));
+        if (hotelCount != null && hotelCount > 0) {
+            throw new BusinessException("当前城市下存在酒店，无法删除");
+        }
+        cityMapper.deleteById(id);
+    }
 
     // ========== 酒店 ==========
 
@@ -193,16 +206,49 @@ public class ResourceServiceImpl implements ResourceService {
     }
 
     @Override
+    @Transactional
     public void updateHotel(Long id, HotelSaveRequest req) {
         Hotel hotel = hotelMapper.selectById(id);
         if (hotel == null) throw new BusinessException("酒店不存在");
         BeanUtil.copyProperties(req, hotel, "id");
         normalizeHotelFields(hotel);
         hotelMapper.updateById(hotel);
+
+        if (req.getImageUrls() != null) {
+            hotelImageMapper.delete(new LambdaQueryWrapper<HotelImage>().eq(HotelImage::getHotelId, id));
+            for (int i = 0; i < req.getImageUrls().size(); i++) {
+                HotelImage img = new HotelImage();
+                img.setHotelId(id);
+                img.setUrl(req.getImageUrls().get(i));
+                img.setType(i == 0 ? 1 : 4);
+                img.setSortOrder(i);
+                hotelImageMapper.insert(img);
+            }
+        }
+
+        if (req.getFacilities() != null) {
+            hotelFacilityMapper.delete(new LambdaQueryWrapper<HotelFacility>().eq(HotelFacility::getHotelId, id));
+            for (String name : req.getFacilities()) {
+                HotelFacility facility = new HotelFacility();
+                facility.setHotelId(id);
+                facility.setName(name);
+                hotelFacilityMapper.insert(facility);
+            }
+        }
     }
 
     @Override
+    @Transactional
     public void deleteHotel(Long id) {
+        List<Room> rooms = roomMapper.selectList(new LambdaQueryWrapper<Room>().eq(Room::getHotelId, id));
+        for (Room room : rooms) {
+            roomImageMapper.delete(new LambdaQueryWrapper<RoomImage>().eq(RoomImage::getRoomId, room.getId()));
+            roomFacilityMapper.delete(new LambdaQueryWrapper<RoomFacility>().eq(RoomFacility::getRoomId, room.getId()));
+            roomMapper.deleteById(room.getId());
+        }
+        reviewMapper.delete(new LambdaQueryWrapper<Review>().eq(Review::getHotelId, id));
+        hotelImageMapper.delete(new LambdaQueryWrapper<HotelImage>().eq(HotelImage::getHotelId, id));
+        hotelFacilityMapper.delete(new LambdaQueryWrapper<HotelFacility>().eq(HotelFacility::getHotelId, id));
         hotelMapper.deleteById(id);
     }
 
@@ -308,7 +354,10 @@ public class ResourceServiceImpl implements ResourceService {
     }
 
     @Override
+    @Transactional
     public void deleteRoom(Long id) {
+        roomImageMapper.delete(new LambdaQueryWrapper<RoomImage>().eq(RoomImage::getRoomId, id));
+        roomFacilityMapper.delete(new LambdaQueryWrapper<RoomFacility>().eq(RoomFacility::getRoomId, id));
         roomMapper.deleteById(id);
     }
 

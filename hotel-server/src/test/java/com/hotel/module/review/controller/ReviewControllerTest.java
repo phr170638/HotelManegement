@@ -5,10 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hotel.module.review.dto.ReviewCreateRequest;
 import com.hotel.module.review.entity.Review;
 import com.hotel.module.review.mapper.ReviewMapper;
+import com.hotel.module.order.entity.Order;
+import com.hotel.module.order.mapper.OrderMapper;
 import com.hotel.module.resource.entity.Hotel;
 import com.hotel.module.resource.mapper.HotelMapper;
 import com.hotel.module.user.dto.LoginRequest;
-import com.hotel.module.user.dto.RegisterRequest;
+import com.hotel.module.user.entity.User;
 import com.hotel.module.user.entity.UserRole;
 import com.hotel.module.user.mapper.UserMapper;
 import com.hotel.module.user.mapper.UserRoleMapper;
@@ -20,12 +22,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -41,17 +45,16 @@ class ReviewControllerTest {
 
     private static final String TEST_PHONE = "13900000003";
     private static final String TEST_PASSWORD = "test123456";
-    private static final String ADMIN_PHONE = "13800000000";
-    private static final String ADMIN_PASSWORD = "admin123";
+    private static final String[][] ADMIN_CREDENTIALS = {
+            {"17727974960", "ycj20050908"},
+            {"13800000000", "admin123"}
+    };
 
     @Autowired
     private MockMvc mockMvc;
 
     @Autowired
     private ObjectMapper objectMapper;
-
-    @Autowired
-    private StringRedisTemplate redisTemplate;
 
     @Autowired
     private UserMapper userMapper;
@@ -64,6 +67,12 @@ class ReviewControllerTest {
 
     @Autowired
     private ReviewMapper reviewMapper;
+
+    @Autowired
+    private OrderMapper orderMapper;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     private Long testHotelId;
     private String userToken;
@@ -79,16 +88,17 @@ class ReviewControllerTest {
         hotelMapper.insert(hotel);
         testHotelId = hotel.getId();
 
-        // 注册+登录普通用户
-        redisTemplate.opsForValue().set("code:" + TEST_PHONE + ":register", "123456");
+        User user = new User();
+        user.setPhone(TEST_PHONE);
+        user.setPassword(passwordEncoder.encode(TEST_PASSWORD));
+        user.setNickname("评价测试用户");
+        user.setStatus(1);
+        userMapper.insert(user);
 
-        RegisterRequest regReq = new RegisterRequest();
-        regReq.setPhone(TEST_PHONE);
-        regReq.setPassword(TEST_PASSWORD);
-        regReq.setCode("123456");
-        mockMvc.perform(post("/api/user/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(regReq)));
+        UserRole userRole = new UserRole();
+        userRole.setUserId(user.getId());
+        userRole.setRoleId(2L);
+        userRoleMapper.insert(userRole);
 
         LoginRequest loginReq = new LoginRequest();
         loginReq.setPhone(TEST_PHONE);
@@ -100,14 +110,22 @@ class ReviewControllerTest {
         userToken = objectMapper.readTree(resp).get("data").get("token").asText();
 
         // 登录管理员
-        LoginRequest adminReq = new LoginRequest();
-        adminReq.setPhone(ADMIN_PHONE);
-        adminReq.setPassword(ADMIN_PASSWORD);
-        String adminResp = mockMvc.perform(post("/api/user/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(adminReq)))
-                .andReturn().getResponse().getContentAsString();
-        adminToken = objectMapper.readTree(adminResp).get("data").get("token").asText();
+        for (String[] credential : ADMIN_CREDENTIALS) {
+            LoginRequest adminReq = new LoginRequest();
+            adminReq.setPhone(credential[0]);
+            adminReq.setPassword(credential[1]);
+            String adminResp = mockMvc.perform(post("/api/user/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(adminReq)))
+                    .andReturn().getResponse().getContentAsString();
+            if (adminResp.contains("\"code\":200")) {
+                adminToken = objectMapper.readTree(adminResp).get("data").get("token").asText();
+                break;
+            }
+        }
+        if (adminToken == null) {
+            throw new RuntimeException("无法以管理员身份登录");
+        }
     }
 
     @AfterEach
@@ -115,6 +133,10 @@ class ReviewControllerTest {
         // 清理评价
         var reviews = reviewMapper.selectList(new LambdaQueryWrapper<>());
         if (reviews != null) reviews.forEach(r -> reviewMapper.deleteById(r.getId()));
+
+        var orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getHotelId, testHotelId));
+        if (orders != null) orders.forEach(o -> orderMapper.deleteById(o.getId()));
 
         // 清理测试酒店
         if (testHotelId != null) hotelMapper.deleteById(testHotelId);
@@ -126,10 +148,25 @@ class ReviewControllerTest {
                     .eq(UserRole::getUserId, user.getId()));
             userMapper.deleteById(user.getId());
         }
+    }
 
-        // 清理 Redis
-        var keys = redisTemplate.keys("code:*");
-        if (keys != null) keys.forEach(redisTemplate::delete);
+    private Long createCompletedOrderForReview() {
+        Long userId = userMapper.selectByPhone(TEST_PHONE).getId();
+        Order order = new Order();
+        order.setOrderNo("RV" + System.nanoTime());
+        order.setUserId(userId);
+        order.setHotelId(testHotelId);
+        order.setCheckInDate(LocalDate.now().minusDays(3));
+        order.setCheckOutDate(LocalDate.now().minusDays(1));
+        order.setRoomCount(1);
+        order.setGuestName("评价测试用户");
+        order.setGuestPhone(TEST_PHONE);
+        order.setOriginalAmount(new BigDecimal("299.00"));
+        order.setDiscountAmount(BigDecimal.ZERO);
+        order.setTotalAmount(new BigDecimal("299.00"));
+        order.setStatus(5);
+        orderMapper.insert(order);
+        return order.getId();
     }
 
     // ==================== 1. 酒店评价列表 ====================
@@ -177,8 +214,10 @@ class ReviewControllerTest {
         @Test
         @DisplayName("发表评价成功")
         void shouldCreateReview() throws Exception {
+            Long orderId = createCompletedOrderForReview();
             ReviewCreateRequest req = new ReviewCreateRequest();
             req.setHotelId(testHotelId);
+            req.setOrderId(orderId);
             req.setScore(5);
             req.setContent("非常不错的酒店，推荐！");
             req.setImages(List.of("https://img.example.com/1.jpg", "https://img.example.com/2.jpg"));
@@ -201,9 +240,10 @@ class ReviewControllerTest {
         @Test
         @DisplayName("发表评价后列表可见")
         void shouldAppearInList() throws Exception {
-            // 发表评价
+            Long orderId = createCompletedOrderForReview();
             ReviewCreateRequest req = new ReviewCreateRequest();
             req.setHotelId(testHotelId);
+            req.setOrderId(orderId);
             req.setScore(4);
             req.setContent("不错");
             mockMvc.perform(post("/api/review/create")
@@ -220,12 +260,12 @@ class ReviewControllerTest {
         }
 
         @Test
-        @DisplayName("未登录返回401")
-        void shouldReturn401Unauthenticated() throws Exception {
+        @DisplayName("未登录返回403")
+        void shouldReturn403Unauthenticated() throws Exception {
             mockMvc.perform(post("/api/review/create")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
-                    .andExpect(status().isUnauthorized());
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -238,9 +278,10 @@ class ReviewControllerTest {
         @Test
         @DisplayName("管理员回复成功")
         void shouldReplyAsAdmin() throws Exception {
-            // 先发表评价
+            Long orderId = createCompletedOrderForReview();
             ReviewCreateRequest req = new ReviewCreateRequest();
             req.setHotelId(testHotelId);
+            req.setOrderId(orderId);
             req.setScore(4);
             req.setContent("环境很好");
             mockMvc.perform(post("/api/review/create")
@@ -278,12 +319,12 @@ class ReviewControllerTest {
         }
 
         @Test
-        @DisplayName("未登录返回401")
-        void shouldReturn401Unauthenticated() throws Exception {
+        @DisplayName("未登录返回403")
+        void shouldReturn403Unauthenticated() throws Exception {
             mockMvc.perform(put("/api/review/1/reply")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"reply\":\"test\"}"))
-                    .andExpect(status().isUnauthorized());
+                    .andExpect(status().isForbidden());
         }
     }
 }

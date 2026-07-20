@@ -45,16 +45,18 @@ class ResourceControllerTest {
     @Autowired private CountryMapper countryMapper;
     @Autowired private CityMapper cityMapper;
 
-    private static final String ADMIN_PASSWORD = "admin123";
+    private static final String[][] ADMIN_CREDENTIALS = {
+            {"17727974960", "ycj20050908"},
+            {"13800000000", "admin123"},
+            {"13800000001", "admin123"}
+    };
 
     @BeforeAll
     void loginAsAdmin() throws Exception {
-        // 尝试两套种子数据的管理员：schema.sql用13800000000，Seed.sql用13800000001
-        String[] phones = {"13800000000", "13800000001"};
-        for (String phone : phones) {
+        for (String[] credential : ADMIN_CREDENTIALS) {
             LoginRequest req = new LoginRequest();
-            req.setPhone(phone);
-            req.setPassword(ADMIN_PASSWORD);
+            req.setPhone(credential[0]);
+            req.setPassword(credential[1]);
 
             String response = mockMvc.perform(post("/api/user/login")
                             .contentType(MediaType.APPLICATION_JSON)
