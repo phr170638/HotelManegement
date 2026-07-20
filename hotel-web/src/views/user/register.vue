@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, HomeFilled, Lock, Message, Phone, Tickets, UserFilled } from '@element-plus/icons-vue'
 import { sendCode } from '@/api/user'
 import { useUserStore } from '@/store/user'
-import { validatePassword, validatePhone } from '@/utils/validate'
+import { validateEmail, validatePassword, validatePhone } from '@/utils/validate'
 import { authVisualImage } from '@/utils/hotel'
 
 const router = useRouter()
@@ -27,12 +27,17 @@ const loginLink = computed(() => ({
 
 const form = reactive({
   phone: '',
+  email: '',
   password: '',
   code: ''
 })
 
 const rules = {
   phone: [{ validator: validatePhone, trigger: 'blur' }],
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { validator: validateEmail, trigger: 'blur' }
+  ],
   password: [{ validator: validatePassword, trigger: 'blur' }],
   code: [{ required: true, message: '请输入验证码', trigger: 'blur' }]
 }
@@ -52,9 +57,9 @@ function startCountdown(seconds = 60) {
 }
 
 async function handleSendCode() {
-  form.phone = form.phone.trim()
+  form.email = form.email.trim()
   try {
-    await formRef.value?.validateField('phone')
+    await formRef.value?.validateField('email')
   } catch {
     return
   }
@@ -63,12 +68,12 @@ async function handleSendCode() {
 
   sendingCode.value = true
   try {
-    const result = await sendCode(form.phone, 'register', { silent: true })
+    const result = await sendCode(form.email, 'register', { silent: true })
     if (result?.debugCode) {
       form.code = result.debugCode
     }
     startCountdown(result?.resendIntervalInSeconds || 60)
-    ElMessage.success(result?.debugCode ? '验证码已发送，当前联调环境已自动填入验证码' : '验证码已发送，请注意查收')
+    ElMessage.success(result?.debugCode ? '验证码已发送到邮箱，当前联调环境已自动填入验证码' : '验证码已发送到邮箱，请注意查收')
   } catch (error) {
     ElMessage.error(error.response?.data?.message || error.message || '验证码发送失败')
   } finally {
@@ -78,6 +83,7 @@ async function handleSendCode() {
 
 async function handleRegister() {
   form.phone = form.phone.trim()
+  form.email = form.email.trim()
   form.password = form.password.trim()
   form.code = form.code.trim()
   const valid = await formRef.value?.validate().catch(() => false)
@@ -85,7 +91,7 @@ async function handleRegister() {
 
   loading.value = true
   try {
-    await userStore.register({ phone: form.phone, password: form.password, code: form.code })
+    await userStore.register({ phone: form.phone, email: form.email, password: form.password, code: form.code })
     ElMessage.success('注册成功，请登录')
     router.push(loginLink.value)
   } catch (error) {
@@ -147,6 +153,13 @@ function goBack() {
               </template>
             </el-input>
           </el-form-item>
+          <el-form-item prop="email">
+            <el-input v-model="form.email" size="large" placeholder="请输入邮箱">
+              <template #prefix>
+                <el-icon class="input-prefix"><Message /></el-icon>
+              </template>
+            </el-input>
+          </el-form-item>
           <el-form-item prop="password">
             <el-input v-model="form.password" size="large" type="password" show-password placeholder="密码至少 6 位">
               <template #prefix>
@@ -177,7 +190,7 @@ function goBack() {
 
         <div class="entry-hint">
           <span class="entry-hint__title">注册说明</span>
-          <p>完成注册后即可下单、查看订单与入住信息；验证码发送后会按倒计时控制重发频率。</p>
+          <p>完成注册后即可下单、查看订单与入住信息；验证码将发送到邮箱，并按倒计时控制重发频率。</p>
         </div>
 
         <div class="tips">

@@ -22,6 +22,10 @@ public class OrderVO {
     private Integer roomCount;
     private String guestName;
     private String guestPhone;
+    private Long userCouponId;
+    private String couponName;
+    private BigDecimal originalAmount;
+    private BigDecimal discountAmount;
     private BigDecimal totalAmount;
     private Integer status;
     private String statusText;

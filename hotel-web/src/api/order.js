@@ -8,8 +8,12 @@ export function payOrder(id, config = {}) {
   return request.post(`/order/${id}/pay`, null, config)
 }
 
-export function mockPaySuccess(id) {
-  return request.post(`/order/${id}/mock-pay-success`)
+export function getOrderDetail(id, config = {}) {
+  return request.get(`/order/${id}`, config)
+}
+
+export function syncPaymentStatus(id, config = {}) {
+  return request.post(`/order/${id}/sync-payment`, null, config)
 }
 
 export function cancelOrder(id) {

@@ -230,7 +230,51 @@ CREATE TABLE IF NOT EXISTS t_payment (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='支付记录';
 
 -- ============================================================
--- 6. 评价表
+-- 6. 优惠券表
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS t_coupon (
+    id                BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name              VARCHAR(100)   NOT NULL COMMENT '优惠券名称',
+    receive_code      VARCHAR(10)    UNIQUE COMMENT '兑换码',
+    description       VARCHAR(255)   COMMENT '说明',
+    discount_amount   DECIMAL(10,2)  NOT NULL COMMENT '优惠金额',
+    threshold_amount  DECIMAL(10,2) DEFAULT 0 COMMENT '使用门槛',
+    total_num         INT            NOT NULL COMMENT '总库存',
+    issue_num         INT DEFAULT 0  NOT NULL COMMENT '已发放数量',
+    per_user_limit    INT DEFAULT 1  NOT NULL COMMENT '每人限领数量',
+    status            TINYINT DEFAULT 1 COMMENT '状态：0-禁用 1-启用',
+    receive_start_time DATETIME      COMMENT '领取开始时间',
+    receive_end_time   DATETIME      COMMENT '领取结束时间',
+    valid_start_time   DATETIME      COMMENT '生效开始时间',
+    valid_end_time     DATETIME      COMMENT '生效结束时间',
+    create_time       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time       DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='优惠券模板';
+
+CREATE TABLE IF NOT EXISTS t_user_coupon (
+    id                BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id           BIGINT        NOT NULL COMMENT '用户ID',
+    coupon_id         BIGINT        NOT NULL COMMENT '优惠券ID',
+    coupon_name       VARCHAR(100)  NOT NULL COMMENT '优惠券名称快照',
+    receive_code      VARCHAR(10)   NOT NULL COMMENT '兑换码快照',
+    description       VARCHAR(255)  COMMENT '说明快照',
+    discount_amount   DECIMAL(10,2) NOT NULL COMMENT '优惠金额快照',
+    threshold_amount  DECIMAL(10,2) DEFAULT 0 COMMENT '门槛快照',
+    status            TINYINT DEFAULT 0 COMMENT '状态：0-未使用 1-已使用 2-已过期',
+    receive_time      DATETIME      NOT NULL COMMENT '领取时间',
+    valid_start_time  DATETIME      COMMENT '生效开始时间',
+    valid_end_time    DATETIME      COMMENT '生效结束时间',
+    use_time          DATETIME      COMMENT '使用时间',
+    create_time       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_coupon_user (user_id),
+    INDEX idx_user_coupon_coupon (coupon_id),
+    FOREIGN KEY (user_id) REFERENCES t_user(id),
+    FOREIGN KEY (coupon_id) REFERENCES t_coupon(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户优惠券';
+
+-- ============================================================
+-- 7. 评价表
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS t_review (
@@ -250,7 +294,7 @@ CREATE TABLE IF NOT EXISTS t_review (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='酒店评价';
 
 -- ============================================================
--- 7. 初始数据
+-- 8. 初始数据
 -- ============================================================
 
 -- 国家
@@ -310,3 +354,13 @@ INSERT INTO t_user (id, phone, email, password, nickname, status) VALUES
 
 -- 管理员角色分配
 INSERT INTO t_user_role (user_id, role_id) VALUES (1, 1);
+
+-- 示例优惠券（启动后会自动生成 receive_code）
+INSERT INTO t_coupon (id, name, receive_code, description, discount_amount, threshold_amount, total_num, issue_num, per_user_limit, status, receive_start_time, receive_end_time, valid_start_time, valid_end_time) VALUES
+(1, '新客立减券', NULL, '满 300 元可用，立减 50 元', 50.00, 300.00, 5000, 0, 1, 1, '2026-01-01 00:00:00', '2030-12-31 23:59:59', '2026-01-01 00:00:00', '2030-12-31 23:59:59'),
+(2, '周末精选券', NULL, '满 500 元可用，立减 80 元', 80.00, 500.00, 3000, 0, 2, 1, '2026-01-01 00:00:00', '2030-12-31 23:59:59', '2026-01-01 00:00:00', '2030-12-31 23:59:59');
+
+SELECT id, name, receive_code, total_num, issue_num, per_user_limit, status
+FROM t_coupon;
+
+SHOW PROCESSLIST;

@@ -27,6 +27,8 @@ public class OrderCreateRequest {
     @NotBlank(message = "入住人手机号不能为空")
     private String guestPhone;
 
+    private Long userCouponId;
+
     @NotEmpty(message = "订单明细不能为空")
     private List<OrderItemRequest> items;
 

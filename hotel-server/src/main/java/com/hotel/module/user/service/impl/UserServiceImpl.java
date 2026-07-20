@@ -4,6 +4,7 @@ import cn.hutool.core.lang.UUID;
 import com.hotel.common.exception.BusinessException;
 import com.hotel.common.result.PageResult;
 import com.hotel.common.util.JwtUtil;
+import com.hotel.module.notification.service.VerificationCodeService;
 import com.hotel.module.order.service.OrderService;
 import com.hotel.module.order.vo.OrderVO;
 import com.hotel.module.user.dto.LoginRequest;
@@ -21,7 +22,6 @@ import com.hotel.module.user.vo.UserVO;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -32,9 +32,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 @Service
@@ -42,30 +40,26 @@ import java.util.regex.Pattern;
 public class UserServiceImpl implements UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
-    private static final long CODE_EXPIRE_MILLIS = 5 * 60 * 1000L;
-    private static final long CODE_RESEND_INTERVAL_MILLIS = 60 * 1000L;
     private static final long MAX_AVATAR_SIZE = 2 * 1024 * 1024L;
     private static final Pattern PHONE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
-    private static final Map<String, VerifyCodeEntry> VERIFY_CODE_CACHE = new ConcurrentHashMap<>();
 
     private final UserMapper userMapper;
     private final UserRoleMapper userRoleMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final OrderService orderService;
-    @Value("${app.verify-code.expose-code:false}")
-    private boolean exposeVerifyCode;
+    private final VerificationCodeService verificationCodeService;
 
     @Override
     public void register(RegisterRequest req) {
         String phone = normalizeText(req.getPhone());
-        String email = normalizeText(req.getEmail());
+        String email = normalizeRequired(req.getEmail(), "邮箱不能为空").toLowerCase(Locale.ROOT);
         String password = normalizeText(req.getPassword());
         String code = normalizeText(req.getCode());
 
         validatePhoneNumber(phone);
         validateRequired(password, "密码不能为空");
-        validateVerifyCode(phone, "register", code);
+        verificationCodeService.validateEmailCode(email, "register", code);
 
         // 手机号/邮箱唯一性校验
         if (userMapper.selectByPhone(phone) != null) {
@@ -90,28 +84,10 @@ public class UserServiceImpl implements UserService {
         userRoleMapper.insert(userRole);
     }
 
-    private void validateVerifyCode(String phone, String type, String code) {
-        validatePhoneNumber(phone);
-        if (code == null || code.isBlank()) {
-            throw new BusinessException("验证码不能为空");
-        }
-
-        String cacheKey = buildVerifyCodeKey(phone, type);
-        VerifyCodeEntry entry = VERIFY_CODE_CACHE.get(cacheKey);
-        if (entry == null || entry.expireAt() < System.currentTimeMillis()) {
-            VERIFY_CODE_CACHE.remove(cacheKey);
-            throw new BusinessException("验证码已失效，请重新获取");
-        }
-        if (!entry.code().equals(code)) {
-            throw new BusinessException("验证码错误");
-        }
-        VERIFY_CODE_CACHE.remove(cacheKey);
-    }
-
     @Override
     public LoginVO login(LoginRequest req) {
         String phone = normalizeText(req.getPhone());
-        String email = normalizeText(req.getEmail());
+        String email = normalizeEmail(req.getEmail());
         String password = normalizeText(req.getPassword());
         validateRequired(password, "密码不能为空");
         User user = null;
@@ -237,36 +213,11 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public SendCodeVO sendCode(String phone, String type) {
-        String normalizedPhone = normalizeText(phone);
-        validatePhoneNumber(normalizedPhone);
-        clearExpiredVerifyCodes();
-
-        String normalizedType = normalizeText(type);
-        String bizType = normalizedType == null ? "register" : normalizedType;
-        String cacheKey = buildVerifyCodeKey(normalizedPhone, bizType);
-        long now = System.currentTimeMillis();
-        VerifyCodeEntry currentEntry = VERIFY_CODE_CACHE.get(cacheKey);
-
-        if (currentEntry != null && currentEntry.expireAt() >= now && now - currentEntry.createdAt() < CODE_RESEND_INTERVAL_MILLIS) {
-            throw new BusinessException("验证码发送过于频繁，请稍后再试");
-        }
-
-        String verifyCode = String.format("%06d", ThreadLocalRandom.current().nextInt(100000, 1000000));
-        VERIFY_CODE_CACHE.put(
-                cacheKey,
-                new VerifyCodeEntry(verifyCode, now, now + CODE_EXPIRE_MILLIS)
-        );
-        log.debug("Verify code generated for phone={}, type={}", maskPhone(normalizedPhone), bizType);
-        return new SendCodeVO(
-                Math.toIntExact(CODE_EXPIRE_MILLIS / 1000),
-                Math.toIntExact(CODE_RESEND_INTERVAL_MILLIS / 1000),
-                exposeVerifyCode ? verifyCode : null
-        );
-    }
-
-    private String buildVerifyCodeKey(String phone, String type) {
-        return phone + ":" + type;
+    public SendCodeVO sendCode(String email, String type) {
+        String normalizedEmail = normalizeRequired(email, "邮箱不能为空");
+        SendCodeVO sendCodeVO = verificationCodeService.sendEmailCode(normalizedEmail, type);
+        log.debug("Verify code sent by email={}, type={}", maskEmail(normalizedEmail), normalizeText(type));
+        return sendCodeVO;
     }
 
     private void validatePhoneNumber(String phone) {
@@ -278,19 +229,31 @@ public class UserServiceImpl implements UserService {
         }
     }
 
-    private void clearExpiredVerifyCodes() {
-        long now = System.currentTimeMillis();
-        VERIFY_CODE_CACHE.entrySet().removeIf(entry -> entry.getValue().expireAt() < now);
-    }
-
     private void validateRequired(String value, String message) {
         if (value == null) {
             throw new BusinessException(message);
         }
     }
 
-    private String maskPhone(String phone) {
-        return phone.length() >= 7 ? phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4) : phone;
+    private String normalizeRequired(String value, String message) {
+        String normalizedValue = normalizeText(value);
+        if (normalizedValue == null) {
+            throw new BusinessException(message);
+        }
+        return normalizedValue;
+    }
+
+    private String normalizeEmail(String value) {
+        String normalizedEmail = normalizeText(value);
+        return normalizedEmail == null ? null : normalizedEmail.toLowerCase(Locale.ROOT);
+    }
+
+    private String maskEmail(String email) {
+        int separatorIndex = email.indexOf('@');
+        if (separatorIndex <= 1) {
+            return "***" + email.substring(Math.max(separatorIndex, 0));
+        }
+        return email.substring(0, 1) + "***" + email.substring(separatorIndex);
     }
 
     private String normalizeText(String value) {
@@ -326,6 +289,4 @@ public class UserServiceImpl implements UserService {
         }
     }
 
-    private record VerifyCodeEntry(String code, long createdAt, long expireAt) {
-    }
 }

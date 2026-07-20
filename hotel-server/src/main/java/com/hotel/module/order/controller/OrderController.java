@@ -38,6 +38,14 @@ public class OrderController {
         return R.ok(orderService.detailByUser(userId, id));
     }
 
+    @Operation(summary = "主动同步支付结果")
+    @PostMapping("/{id}/sync-payment")
+    public R<OrderVO> syncPayment(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        orderService.detailByUser(userId, id);
+        alipayService.syncPaymentStatus(id);
+        return R.ok(orderService.detailByUser(userId, id));
+    }
+
     @Operation(summary = "发起支付")
     @PostMapping("/{id}/pay")
     public R<Map<String, Object>> pay(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
@@ -50,13 +58,6 @@ public class OrderController {
     public R<Void> cancel(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
         orderService.cancel(userId, id);
         return R.okMsg("订单已取消");
-    }
-
-    @Operation(summary = "本地支付成功回填")
-    @PostMapping("/{id}/mock-pay-success")
-    public R<Void> mockPaySuccess(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
-        orderService.mockPaySuccess(userId, id);
-        return R.okMsg("订单支付状态已更新");
     }
 
     @Operation(summary = "订单预取消（退房申请第一步）")

@@ -18,8 +18,6 @@ public interface OrderService {
 
     void cancel(Long userId, Long orderId);
 
-    void mockPaySuccess(Long userId, Long orderId);
-
     Map<String, Object> preCancel(Long userId, Long orderId);
 
     void confirmCancel(Long userId, Long orderId, String cancelConfirmId);

@@ -1,14 +1,18 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createOrder } from '@/api/order'
+import { getMyCoupons } from '@/api/coupon'
 import { validatePhone } from '@/utils/validate'
 
 const route = useRoute()
 const router = useRouter()
 const submitting = ref(false)
 const submitError = ref('')
+const couponLoading = ref(false)
+const couponList = ref([])
+const selectedCouponId = ref(null)
 
 const hotelId = Number(route.query.hotelId)
 const roomId = Number(route.query.roomId)
@@ -25,9 +29,13 @@ const form = reactive({
   quantity: 1
 })
 
-const totalPrice = computed(() => {
+const totalAmount = computed(() => {
   const nights = stayNights.value > 0 ? stayNights.value : 0
-  return (price * form.quantity * nights).toFixed(2)
+  return Number((price * form.quantity * nights).toFixed(2))
+})
+
+const totalPrice = computed(() => {
+  return totalAmount.value.toFixed(2)
 })
 const stayNights = computed(() => {
   if (!form.checkInDate || !form.checkOutDate) return 0
@@ -36,6 +44,38 @@ const stayNights = computed(() => {
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0
   return Math.floor((end - start) / (24 * 60 * 60 * 1000))
 })
+
+const availableCoupons = computed(() => {
+  return couponList.value.filter(item => item.status === 0)
+})
+
+const eligibleCoupons = computed(() => {
+  return availableCoupons.value.filter(item => Number(item.thresholdAmount || 0) <= totalAmount.value)
+})
+
+const selectedCoupon = computed(() => {
+  return eligibleCoupons.value.find(item => String(item.id) === String(selectedCouponId.value)) || null
+})
+
+const discountAmount = computed(() => Number(selectedCoupon.value?.discountAmount || 0))
+
+const payableAmount = computed(() => {
+  return Math.max(totalAmount.value - discountAmount.value, 0).toFixed(2)
+})
+
+const couponHint = computed(() => {
+  if (!couponList.value.length) return '当前没有可用优惠券，可前往个人中心输入兑换码领取'
+  if (!eligibleCoupons.value.length) return '当前订单金额暂未达到任何优惠券门槛'
+  return `当前有 ${eligibleCoupons.value.length} 张优惠券可用于本单`
+})
+
+watch(eligibleCoupons, (coupons) => {
+  if (!coupons.some(item => String(item.id) === String(selectedCouponId.value))) {
+    selectedCouponId.value = null
+  }
+}, { immediate: true })
+
+onMounted(fetchCoupons)
 
 function disableCheckInDate(date) {
   const today = new Date()
@@ -104,6 +144,7 @@ async function submitOrder() {
       roomCount: form.quantity,
       guestName: form.guestName,
       guestPhone: form.guestPhone,
+      userCouponId: selectedCouponId.value || null,
       items: [{ roomId, quantity: form.quantity }]
     })
     ElMessage.success('订单创建成功')
@@ -113,6 +154,18 @@ async function submitOrder() {
     ElMessage.error(submitError.value)
   } finally {
     submitting.value = false
+  }
+}
+
+async function fetchCoupons() {
+  couponLoading.value = true
+  try {
+    const data = await getMyCoupons({ silent: true })
+    couponList.value = Array.isArray(data) ? data : []
+  } catch (error) {
+    couponList.value = []
+  } finally {
+    couponLoading.value = false
   }
 }
 </script>
@@ -166,6 +219,14 @@ async function submitOrder() {
             <strong class="price">{{ stayNights > 0 ? `¥${totalPrice}` : '待选择日期后计算' }}</strong>
           </div>
           <div class="summary-item">
+            <span>优惠券</span>
+            <strong>{{ selectedCoupon ? `${selectedCoupon.couponName} - ¥${discountAmount}` : '未使用优惠券' }}</strong>
+          </div>
+          <div class="summary-item">
+            <span>应付金额</span>
+            <strong class="price">{{ stayNights > 0 ? `¥${payableAmount}` : '待选择日期后计算' }}</strong>
+          </div>
+          <div class="summary-item">
             <span>入住晚数</span>
             <strong>{{ stayNights > 0 ? `${stayNights} 晚` : '待选择日期' }}</strong>
           </div>
@@ -202,6 +263,26 @@ async function submitOrder() {
           </div>
           <el-form-item label="房间数量">
             <el-input-number v-model="form.quantity" :min="1" :max="5" />
+          </el-form-item>
+          <el-form-item label="优惠券">
+            <el-select
+              v-model="selectedCouponId"
+              clearable
+              filterable
+              :loading="couponLoading"
+              :disabled="!stayNights || !eligibleCoupons.length"
+              placeholder="请选择可用优惠券"
+            >
+              <el-option
+                v-for="coupon in eligibleCoupons"
+                :key="coupon.id"
+                :label="`${coupon.couponName} - 立减¥${Number(coupon.discountAmount || 0)}`"
+                :value="coupon.id"
+              />
+            </el-select>
+            <div class="coupon-tip">
+              {{ couponHint }}
+            </div>
           </el-form-item>
           <div class="form-actions">
             <el-button @click="hasValidParams ? $router.push(`/hotel/${hotelId}`) : $router.push('/search')">取消并返回</el-button>
@@ -288,8 +369,16 @@ async function submitOrder() {
 }
 
 .date-grid :deep(.el-date-editor),
-.date-grid :deep(.el-input-number) {
+.date-grid :deep(.el-input-number),
+.form-card :deep(.el-select) {
   width: 100%;
+}
+
+.coupon-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
 }
 
 .submit-btn {

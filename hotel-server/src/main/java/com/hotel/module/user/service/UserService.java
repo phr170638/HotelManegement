@@ -27,5 +27,5 @@ public interface UserService {
 
     OrderVO getMyOrderDetail(Long userId, Long orderId);
 
-    SendCodeVO sendCode(String phone, String type);
+    SendCodeVO sendCode(String email, String type);
 }

@@ -6,8 +6,6 @@ import com.hotel.module.order.entity.Order;
 import com.hotel.module.order.entity.OrderItem;
 import com.hotel.module.order.mapper.OrderItemMapper;
 import com.hotel.module.order.mapper.OrderMapper;
-import com.hotel.module.payment.entity.Payment;
-import com.hotel.module.payment.mapper.PaymentMapper;
 import com.hotel.module.order.service.impl.OrderServiceImpl;
 import com.hotel.module.order.vo.OrderVO;
 import com.hotel.module.resource.entity.Hotel;
@@ -46,9 +44,6 @@ class OrderServiceImplTest {
 
     @Mock
     private RoomMapper roomMapper;
-
-    @Mock
-    private PaymentMapper paymentMapper;
 
     @InjectMocks
     private OrderServiceImpl orderService;
@@ -144,43 +139,4 @@ class OrderServiceImplTest {
         assertEquals("所选房型不属于当前酒店", exception.getMessage());
     }
 
-    @Test
-    void mockPaySuccessShouldUpdateOrderAndPayment() {
-        Order order = new Order();
-        order.setId(1L);
-        order.setUserId(8L);
-        order.setOrderNo("HT202607150001");
-        order.setStatus(0);
-        order.setTotalAmount(new BigDecimal("888"));
-        when(orderMapper.selectById(1L)).thenReturn(order);
-        when(paymentMapper.selectOne(any())).thenReturn(null);
-
-        orderService.mockPaySuccess(8L, 1L);
-
-        assertEquals(1, order.getStatus());
-        assertNotNull(order.getPayTime());
-        verify(orderMapper).updateById(order);
-
-        ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
-        verify(paymentMapper).insert(paymentCaptor.capture());
-        assertEquals(order.getId(), paymentCaptor.getValue().getOrderId());
-        assertEquals(1, paymentCaptor.getValue().getStatus());
-        assertEquals(0, new BigDecimal("888").compareTo(paymentCaptor.getValue().getAmount()));
-    }
-
-    @Test
-    void mockPaySuccessShouldRejectOtherUsersOrder() {
-        Order order = new Order();
-        order.setId(1L);
-        order.setUserId(99L);
-        order.setStatus(0);
-        when(orderMapper.selectById(1L)).thenReturn(order);
-
-        BusinessException exception = assertThrows(BusinessException.class, () -> orderService.mockPaySuccess(100L, 1L));
-
-        assertEquals("无权操作此订单", exception.getMessage());
-        verify(orderMapper, never()).updateById(any(Order.class));
-        verify(paymentMapper, never()).insert(any(Payment.class));
-        verify(paymentMapper, never()).updateById(any(Payment.class));
-    }
 }

@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hotel.common.exception.BusinessException;
 import com.hotel.common.result.PageResult;
+import com.hotel.module.coupon.entity.UserCoupon;
+import com.hotel.module.coupon.mapper.UserCouponMapper;
 import com.hotel.module.order.dto.OrderCreateRequest;
 import com.hotel.module.order.entity.Order;
 import com.hotel.module.order.entity.OrderItem;
@@ -12,8 +14,6 @@ import com.hotel.module.order.mapper.OrderItemMapper;
 import com.hotel.module.order.mapper.OrderMapper;
 import com.hotel.module.order.service.OrderService;
 import com.hotel.module.order.vo.OrderVO;
-import com.hotel.module.payment.entity.Payment;
-import com.hotel.module.payment.mapper.PaymentMapper;
 import com.hotel.module.resource.entity.Hotel;
 import com.hotel.module.resource.entity.Room;
 import com.hotel.module.resource.mapper.HotelMapper;
@@ -36,7 +36,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderItemMapper orderItemMapper;
     private final HotelMapper hotelMapper;
     private final RoomMapper roomMapper;
-    private final PaymentMapper paymentMapper;
+    private final UserCouponMapper userCouponMapper;
 
     @Override
     @Transactional
@@ -85,6 +85,13 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException("订单房间数量不能为空");
         }
 
+        CouponSelection couponSelection = lockCouponIfNeeded(userId, req.getUserCouponId(), totalAmount);
+        BigDecimal discountAmount = couponSelection == null ? BigDecimal.ZERO : couponSelection.discountAmount();
+        BigDecimal payableAmount = totalAmount.subtract(discountAmount);
+        if (payableAmount.compareTo(BigDecimal.ZERO) < 0) {
+            payableAmount = BigDecimal.ZERO;
+        }
+
         Order order = new Order();
         order.setOrderNo(orderNo);
         order.setUserId(userId);
@@ -94,7 +101,11 @@ public class OrderServiceImpl implements OrderService {
         order.setRoomCount(totalRoomCount);
         order.setGuestName(req.getGuestName());
         order.setGuestPhone(req.getGuestPhone());
-        order.setTotalAmount(totalAmount);
+        order.setUserCouponId(couponSelection == null ? null : couponSelection.userCouponId());
+        order.setCouponName(couponSelection == null ? null : couponSelection.couponName());
+        order.setOriginalAmount(totalAmount);
+        order.setDiscountAmount(discountAmount);
+        order.setTotalAmount(payableAmount);
         order.setStatus(0); // 待支付
         order.setCreateTime(LocalDateTime.now());
         orderMapper.insert(order);
@@ -146,48 +157,10 @@ public class OrderServiceImpl implements OrderService {
         if (order == null) throw new BusinessException("订单不存在");
         if (!order.getUserId().equals(userId)) throw new BusinessException("无权操作此订单");
         if (order.getStatus() != 0) throw new BusinessException("仅可取消待支付订单");
+        releaseLockedCoupon(order);
         order.setStatus(2); // 已取消
         order.setCancelTime(LocalDateTime.now());
         orderMapper.updateById(order);
-    }
-
-    @Override
-    @Transactional
-    public void mockPaySuccess(Long userId, Long orderId) {
-        Order order = orderMapper.selectById(orderId);
-        if (order == null) throw new BusinessException("订单不存在");
-        if (!order.getUserId().equals(userId)) throw new BusinessException("无权操作此订单");
-        if (Objects.equals(order.getStatus(), 1)) {
-            return;
-        }
-        if (!Objects.equals(order.getStatus(), 0)) {
-            throw new BusinessException("当前订单状态不支持直接标记为已支付");
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-        order.setStatus(1);
-        order.setPayTime(now);
-        orderMapper.updateById(order);
-
-        Payment payment = paymentMapper.selectOne(
-                new LambdaQueryWrapper<Payment>().eq(Payment::getOrderId, orderId).last("limit 1")
-        );
-        if (payment == null) {
-            payment = new Payment();
-            payment.setOrderId(orderId);
-            payment.setCreateTime(now);
-            payment.setPayMethod("ALIPAY");
-        }
-        payment.setAmount(order.getTotalAmount());
-        payment.setStatus(1);
-        payment.setTradeNo("MOCK-" + order.getOrderNo());
-        payment.setPayTime(now);
-
-        if (payment.getId() == null) {
-            paymentMapper.insert(payment);
-        } else {
-            paymentMapper.updateById(payment);
-        }
     }
 
     @Override
@@ -230,6 +203,10 @@ public class OrderServiceImpl implements OrderService {
         vo.setRoomCount(order.getRoomCount());
         vo.setGuestName(order.getGuestName());
         vo.setGuestPhone(order.getGuestPhone());
+        vo.setUserCouponId(order.getUserCouponId());
+        vo.setCouponName(order.getCouponName());
+        vo.setOriginalAmount(order.getOriginalAmount());
+        vo.setDiscountAmount(order.getDiscountAmount());
         vo.setTotalAmount(order.getTotalAmount());
         vo.setStatus(order.getStatus());
         vo.setStatusText(getStatusText(order.getStatus()));
@@ -275,6 +252,52 @@ public class OrderServiceImpl implements OrderService {
         };
     }
 
+    private CouponSelection lockCouponIfNeeded(Long userId, Long userCouponId, BigDecimal totalAmount) {
+        if (userCouponId == null) {
+            return null;
+        }
+
+        UserCoupon userCoupon = userCouponMapper.selectByIdAndUserId(userCouponId, userId);
+        if (userCoupon == null) {
+            throw new BusinessException("所选优惠券不存在");
+        }
+        if (!Objects.equals(userCoupon.getStatus(), 0)) {
+            throw new BusinessException("所选优惠券当前不可用");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (userCoupon.getValidStartTime() != null && now.isBefore(userCoupon.getValidStartTime())) {
+            throw new BusinessException("所选优惠券尚未生效");
+        }
+        if (userCoupon.getValidEndTime() != null && now.isAfter(userCoupon.getValidEndTime())) {
+            throw new BusinessException("所选优惠券已过期");
+        }
+        if (userCoupon.getThresholdAmount() != null && totalAmount.compareTo(userCoupon.getThresholdAmount()) < 0) {
+            throw new BusinessException("当前订单未达到优惠券使用门槛");
+        }
+
+        int updatedRows = userCouponMapper.lockForOrder(userCouponId, userId);
+        if (updatedRows == 0) {
+            throw new BusinessException("所选优惠券已被其他订单占用，请刷新后重试");
+        }
+
+        return new CouponSelection(
+                userCoupon.getId(),
+                userCoupon.getCouponName(),
+                userCoupon.getDiscountAmount() == null ? BigDecimal.ZERO : userCoupon.getDiscountAmount()
+        );
+    }
+
+    private void releaseLockedCoupon(Order order) {
+        if (order.getUserCouponId() == null) {
+            return;
+        }
+        userCouponMapper.releaseForOrder(order.getUserCouponId(), order.getUserId());
+    }
+
     private record PendingOrderItem(Long roomId, String roomName, BigDecimal price, Integer quantity, BigDecimal subtotal) {
+    }
+
+    private record CouponSelection(Long userCouponId, String couponName, BigDecimal discountAmount) {
     }
 }

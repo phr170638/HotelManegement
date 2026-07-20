@@ -8,8 +8,8 @@ export function register(data) {
   return request.post('/user/register', data)
 }
 
-export function sendCode(phone, type = 'register', config = {}) {
-  return request.post('/user/send-code', null, { params: { phone, type }, ...config })
+export function sendCode(email, type = 'register', config = {}) {
+  return request.post('/user/send-code', null, { params: { email, type }, ...config })
 }
 
 export function getUserInfo() {
@@ -32,4 +32,12 @@ export function uploadAvatar(file) {
 
 export function getMyOrders(page = 1, size = 10, status = null, config = {}) {
   return request.get('/user/orders', { params: { page, size, status }, ...config })
+}
+
+export function signIn(config = {}) {
+  return request.post('/user/sign-in', null, config)
+}
+
+export function getSignInStatus(config = {}) {
+  return request.get('/user/sign-in/status', config)
 }

@@ -6,6 +6,24 @@ spring:
     host: localhost
     port: 6379
     password:
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: your_qq_mail@qq.com
+    password: your_mail_smtp_authorization_code
+    protocol: smtp
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
 
 jwt:
   secret: replace-with-a-32-byte-or-longer-secret
@@ -24,3 +42,8 @@ alipay:
   gateway-url: https://openapi.alipaydev.com/gateway.do
   notify-url: http://localhost:8090/api/order/pay-notify
   return-url: http://localhost:5173/order/result
+
+app:
+  notification:
+    mail:
+      from-name: 酒店管理系统

@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Camera, EditPen, House, OfficeBuilding, RefreshRight, SwitchButton, Tickets } from '@element-plus/icons-vue'
+import { Calendar, Camera, EditPen, House, OfficeBuilding, RefreshRight, SwitchButton, Tickets } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
-import { getMyOrders, updateUser, uploadAvatar } from '@/api/user'
+import { getMyOrders, getSignInStatus, signIn, updateUser, uploadAvatar } from '@/api/user'
+import { getMyCoupons, redeemCoupon } from '@/api/coupon'
 import { useUserStore } from '@/store/user'
 import { getUserInitial, resolveMediaUrl } from '@/utils/media'
 
@@ -19,15 +20,38 @@ const loadFailed = ref(false)
 const avatarUploading = ref(false)
 const profileSaving = ref(false)
 const editDialogVisible = ref(false)
+const signInLoading = ref(false)
+const redeemLoading = ref(false)
+const signInStatus = ref({
+  checkedInToday: false,
+  currentMonthSignInDays: 0,
+  continuousSignInDays: 0,
+  currentMonth: '',
+  signInDays: []
+})
+const couponList = ref([])
 const profileForm = reactive({
   nickname: ''
+})
+const couponForm = reactive({
+  code: ''
 })
 
 const quickStats = computed(() => [
   { label: '累计订单', value: String(orderCount.value).padStart(2, '0') },
   { label: '待支付', value: String(pendingCount.value).padStart(2, '0') },
-  { label: '已支付', value: String(paidCount.value).padStart(2, '0') }
+  { label: '已支付', value: String(paidCount.value).padStart(2, '0') },
+  { label: '可用优惠券', value: String(couponList.value.filter((item) => item.status === 0).length).padStart(2, '0') }
 ])
+const signInDaysText = computed(() => {
+  const days = signInStatus.value?.signInDays || []
+  return days.length ? days.join('、') : '本月还未签到'
+})
+const couponSummaryText = computed(() => {
+  const unusedCount = couponList.value.filter((item) => item.status === 0).length
+  if (!couponList.value.length) return '当前还没有领取任何优惠券'
+  return `已领取 ${couponList.value.length} 张，当前可用 ${unusedCount} 张`
+})
 
 const roleLabel = computed(() => {
   if (userInfo.value?.roles?.includes('admin')) return '管理员'
@@ -40,15 +64,25 @@ const avatarUrl = computed(() => resolveMediaUrl(userInfo.value?.avatar))
 async function fetchProfileData() {
   loading.value = true
   try {
-    const [_, orderData] = await Promise.all([
+    const [_, orderData, signData, couponData] = await Promise.all([
       userStore.fetchUserInfo(),
-      getMyOrders(1, 100, null, { silent: true })
+      getMyOrders(1, 100, null, { silent: true }),
+      getSignInStatus({ silent: true }),
+      getMyCoupons({ silent: true })
     ])
     userInfo.value = userStore.userInfo
     const records = orderData.records || []
     orderCount.value = orderData.total || records.length
     pendingCount.value = records.filter((item) => item.status === 0).length
     paidCount.value = records.filter((item) => item.status === 1).length
+    signInStatus.value = {
+      checkedInToday: !!signData?.checkedInToday,
+      currentMonthSignInDays: signData?.currentMonthSignInDays || 0,
+      continuousSignInDays: signData?.continuousSignInDays || 0,
+      currentMonth: signData?.currentMonth || '',
+      signInDays: signData?.signInDays || []
+    }
+    couponList.value = Array.isArray(couponData) ? couponData : []
     profileForm.nickname = userInfo.value?.nickname || ''
     loadFailed.value = false
   } catch (error) {
@@ -56,10 +90,57 @@ async function fetchProfileData() {
     orderCount.value = 0
     pendingCount.value = 0
     paidCount.value = 0
+    signInStatus.value = {
+      checkedInToday: false,
+      currentMonthSignInDays: 0,
+      continuousSignInDays: 0,
+      currentMonth: '',
+      signInDays: []
+    }
+    couponList.value = []
     profileForm.nickname = userInfo.value?.nickname || ''
     loadFailed.value = true
   } finally {
     loading.value = false
+  }
+}
+
+async function handleRedeemCoupon() {
+  const code = couponForm.code.trim().toUpperCase()
+  if (!code) {
+    ElMessage.warning('请输入兑换码')
+    return
+  }
+  redeemLoading.value = true
+  try {
+    await redeemCoupon({ code }, { silent: true })
+    couponForm.code = ''
+    ElMessage.success('优惠券领取成功')
+    await fetchProfileData()
+  } catch (error) {
+    ElMessage.error(error.message || '优惠券领取失败')
+  } finally {
+    redeemLoading.value = false
+  }
+}
+
+async function handleSignIn() {
+  if (signInLoading.value) return
+  signInLoading.value = true
+  try {
+    const data = await signIn({ silent: true })
+    signInStatus.value = {
+      checkedInToday: !!data?.checkedInToday,
+      currentMonthSignInDays: data?.currentMonthSignInDays || 0,
+      continuousSignInDays: data?.continuousSignInDays || 0,
+      currentMonth: data?.currentMonth || '',
+      signInDays: data?.signInDays || []
+    }
+    ElMessage.success(data?.justSignedIn ? '今日签到成功' : '今日已经签到过了')
+  } catch (error) {
+    ElMessage.error(error.message || '签到失败')
+  } finally {
+    signInLoading.value = false
   }
 }
 
@@ -169,6 +250,77 @@ onMounted(fetchProfileData)
         <div v-for="stat in quickStats" :key="stat.label" class="stat-card">
           <strong>{{ stat.value }}</strong>
           <span>{{ stat.label }}</span>
+        </div>
+      </div>
+
+      <div class="checkin-panel">
+        <div class="checkin-copy">
+          <div class="gold-chip">Daily Check-In</div>
+          <h2>{{ signInStatus.currentMonth || '本月' }} 签到记录</h2>
+          <p>连续签到 {{ signInStatus.continuousSignInDays }} 天，本月累计签到 {{ signInStatus.currentMonthSignInDays }} 天。</p>
+          <div class="checkin-days">
+            <span>已签到日期</span>
+            <strong>{{ signInDaysText }}</strong>
+          </div>
+        </div>
+        <div class="checkin-actions">
+          <el-button
+            type="primary"
+            class="primary-btn"
+            :icon="Calendar"
+            :disabled="signInStatus.checkedInToday"
+            :loading="signInLoading"
+            @click="handleSignIn"
+          >
+            {{ signInStatus.checkedInToday ? '今日已签到' : '立即签到' }}
+          </el-button>
+        </div>
+      </div>
+
+      <div class="coupon-panel">
+        <div class="coupon-redeem">
+          <div class="gold-chip">Coupon Exchange</div>
+          <h2>输入获取码领取优惠券</h2>
+          <p>{{ couponSummaryText }}</p>
+          <div class="coupon-redeem__form">
+            <el-input
+              v-model="couponForm.code"
+              maxlength="10"
+              clearable
+              placeholder="请输入数字和大写字母组成的兑换码"
+              @keyup.enter="handleRedeemCoupon"
+            />
+            <el-button type="primary" class="primary-btn" :loading="redeemLoading" @click="handleRedeemCoupon">
+              立即领取
+            </el-button>
+          </div>
+        </div>
+
+        <div class="coupon-list">
+          <div class="coupon-list__header">
+            <strong>我的优惠券</strong>
+            <span>当前仅支持兑换领取，后续可继续接入下单使用</span>
+          </div>
+          <div v-if="couponList.length" class="coupon-grid">
+            <article v-for="coupon in couponList" :key="coupon.id" class="coupon-card" :class="`coupon-card--${coupon.status}`">
+              <div class="coupon-card__amount">
+                <small>立减</small>
+                <strong>{{ Number(coupon.discountAmount || 0) }}</strong>
+              </div>
+              <div class="coupon-card__content">
+                <div class="coupon-card__title">
+                  <strong>{{ coupon.couponName }}</strong>
+                  <span>{{ coupon.statusText }}</span>
+                </div>
+                <p>{{ coupon.description || '暂无优惠说明' }}</p>
+                <div class="coupon-card__meta">
+                  <span>门槛：满 {{ Number(coupon.thresholdAmount || 0) }} 元可用</span>
+                  <span>有效期至：{{ coupon.validEndTime || '长期有效' }}</span>
+                </div>
+              </div>
+            </article>
+          </div>
+          <el-empty v-else description="当前还没有优惠券，输入兑换码即可领取" />
         </div>
       </div>
 
@@ -354,7 +506,7 @@ onMounted(fetchProfileData)
 }
 
 .stats-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .stat-card,
@@ -400,6 +552,166 @@ onMounted(fetchProfileData)
 
 .info-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.checkin-panel {
+  margin-top: 24px;
+  padding: 22px 24px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(109, 90, 75, 0.1), rgba(184, 149, 103, 0.12));
+  border: 1px solid rgba(109, 90, 75, 0.1);
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+}
+
+.checkin-copy h2 {
+  margin: 16px 0 8px;
+  font-size: 24px;
+}
+
+.checkin-copy p,
+.checkin-days span {
+  color: var(--text-secondary);
+}
+
+.checkin-copy p,
+.checkin-days strong {
+  margin: 0;
+  line-height: 1.8;
+}
+
+.checkin-days {
+  margin-top: 12px;
+}
+
+.checkin-days span,
+.checkin-days strong {
+  display: block;
+}
+
+.checkin-days span {
+  font-size: 12px;
+}
+
+.checkin-days strong {
+  margin-top: 8px;
+}
+
+.checkin-actions {
+  display: flex;
+  align-items: center;
+}
+
+.coupon-panel {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.coupon-redeem,
+.coupon-list {
+  padding: 22px 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(109, 90, 75, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.coupon-redeem h2,
+.coupon-list__header strong {
+  margin: 14px 0 8px;
+  font-size: 24px;
+}
+
+.coupon-redeem p,
+.coupon-list__header span,
+.coupon-card__meta span,
+.coupon-card p {
+  color: var(--text-secondary);
+}
+
+.coupon-redeem__form {
+  margin-top: 18px;
+  display: flex;
+  gap: 12px;
+}
+
+.coupon-list__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.coupon-grid {
+  margin-top: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.coupon-card {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px dashed rgba(109, 90, 75, 0.18);
+  background: linear-gradient(145deg, rgba(255, 248, 239, 0.9), rgba(255, 255, 255, 0.92));
+}
+
+.coupon-card--1,
+.coupon-card--2 {
+  opacity: 0.7;
+}
+
+.coupon-card__amount {
+  border-radius: 18px;
+  background: linear-gradient(160deg, #6d5a4b, #b89567);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  text-align: center;
+}
+
+.coupon-card__amount small,
+.coupon-card__amount strong,
+.coupon-card__content strong,
+.coupon-card__meta span {
+  display: block;
+}
+
+.coupon-card__amount strong {
+  margin-top: 8px;
+  font-size: 34px;
+}
+
+.coupon-card__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.coupon-card__title span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(109, 90, 75, 0.08);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.coupon-card p {
+  margin: 10px 0 0;
+  line-height: 1.7;
+}
+
+.coupon-card__meta {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
 }
 
 .info-card {
@@ -517,7 +829,10 @@ onMounted(fetchProfileData)
 @media (max-width: 860px) {
   .profile-hero,
   .profile-identity,
-  .editor-panel {
+  .editor-panel,
+  .checkin-panel,
+  .coupon-panel,
+  .coupon-redeem__form {
     grid-template-columns: 1fr;
     flex-direction: column;
     align-items: flex-start;
@@ -533,6 +848,10 @@ onMounted(fetchProfileData)
   .stats-grid,
   .info-grid,
   .readonly-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .coupon-card {
     grid-template-columns: 1fr;
   }
 

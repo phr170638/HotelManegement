@@ -1,9 +1,9 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { House, OfficeBuilding, Tickets } from '@element-plus/icons-vue'
-import { mockPaySuccess } from '@/api/order'
+import { getOrderDetail, syncPaymentStatus } from '@/api/order'
 
 const route = useRoute()
 const router = useRouter()
@@ -11,24 +11,65 @@ const router = useRouter()
 const orderId = computed(() => String(route.query.orderId || route.query.id || ''))
 const hasOrderId = computed(() => /^\d+$/.test(orderId.value))
 const syncing = ref(false)
+const orderStatus = ref(null)
+const orderStatusText = ref('待确认')
+const maxPollCount = 8
+let pollTimer = null
+let pollCount = 0
 
-const pageTitle = computed(() => '支付成功')
-const pageDescription = computed(() => '你的订单支付已完成，可以继续查看订单状态或返回首页。')
-const statusTitle = computed(() => '支付成功')
-const statusDescription = computed(() => '订单已完成支付，后续可在订单中心继续查看入住安排。')
+const pageTitle = computed(() => (orderStatus.value === 1 ? '支付成功' : '支付结果确认中'))
+const pageDescription = computed(() => (
+  orderStatus.value === 1
+    ? '你的订单支付已完成，可以继续查看订单状态或返回首页。'
+    : '系统正在等待支付回调或主动对账同步完成，请稍候刷新订单状态。'
+))
+const statusTitle = computed(() => (orderStatus.value === 1 ? '支付成功' : '处理中'))
+const statusDescription = computed(() => (
+  orderStatus.value === 1
+    ? '订单已完成支付，后续可在订单中心继续查看入住安排。'
+    : '支付结果以服务端异步通知或主动对账结果为准，请耐心等待几秒。'
+))
+const alertTitle = computed(() => (
+  orderStatus.value === 1
+    ? '支付回调和订单更新已完成，你现在可以前往订单中心查看后续入住安排。'
+    : '支付结果正在通过服务端异步链路与主动对账同步，页面会自动查询最新订单状态。'
+))
 
 onMounted(async () => {
   if (hasOrderId.value) {
-    syncing.value = true
-    try {
-      await mockPaySuccess(orderId.value)
-    } catch (error) {
-      ElMessage.error(error.message || '订单支付状态同步失败')
-    } finally {
-      syncing.value = false
-    }
+    await syncOrderStatus(true)
   }
 })
+
+onBeforeUnmount(() => {
+  window.clearTimeout(pollTimer)
+})
+
+async function syncOrderStatus(shouldPoll = false) {
+  syncing.value = true
+  try {
+    const order = shouldPoll
+      ? await syncPaymentStatus(orderId.value, { silent: true })
+      : await getOrderDetail(orderId.value, { silent: true })
+    orderStatus.value = order?.status ?? null
+    orderStatusText.value = order?.statusText || '待确认'
+
+    if (orderStatus.value === 1 || !shouldPoll || pollCount >= maxPollCount) {
+      window.clearTimeout(pollTimer)
+      pollTimer = null
+      return
+    }
+
+    pollCount += 1
+    pollTimer = window.setTimeout(() => {
+      syncOrderStatus(true)
+    }, 2000)
+  } catch (error) {
+    ElMessage.error(error.message || '订单状态查询失败')
+  } finally {
+    syncing.value = false
+  }
+}
 
 function goOrders() {
   router.push('/user/orders')
@@ -48,10 +89,10 @@ function goCenter() {
 
       <el-alert
         class="status-alert"
-        type="success"
+        :type="orderStatus === 1 ? 'success' : 'info'"
         show-icon
         :closable="false"
-        title="订单支付状态已进入同步流程，完成后可在订单中心继续查看后续入住安排。"
+        :title="alertTitle"
       />
 
       <el-result
@@ -71,13 +112,14 @@ function goCenter() {
         </div>
         <div class="info-card">
           <span>订单状态</span>
-          <strong>已支付</strong>
+          <strong>{{ orderStatusText }}</strong>
         </div>
       </div>
 
       <div class="actions">
         <el-button type="primary" class="primary-btn" :icon="Tickets" @click="goOrders">查看我的订单</el-button>
         <el-button :icon="OfficeBuilding" @click="goCenter">前往个人中心</el-button>
+        <el-button :loading="syncing" @click="syncOrderStatus(false)">刷新订单状态</el-button>
         <el-button @click="$router.push('/search')">继续浏览酒店</el-button>
         <el-button :icon="House" @click="$router.push('/')">返回首页</el-button>
       </div>
