@@ -1,7 +1,12 @@
 package com.hotel.module.user.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hotel.module.user.dto.LoginRequest;
+import com.hotel.module.user.entity.User;
+import com.hotel.module.user.entity.UserRole;
+import com.hotel.module.user.mapper.UserMapper;
+import com.hotel.module.user.mapper.UserRoleMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -10,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -29,6 +35,8 @@ class AdminControllerTest {
             {"17727974960", "ycj20050908"},
             {"13800000000", "admin123"}
     };
+    private static final String NORMAL_USER_PHONE = "13900009999";
+    private static final String NORMAL_USER_PASSWORD = "test123456";
 
     @Autowired
     private MockMvc mockMvc;
@@ -36,10 +44,21 @@ class AdminControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private UserMapper userMapper;
+
+    @Autowired
+    private UserRoleMapper userRoleMapper;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     private String adminToken;
+    private Long normalUserId;
 
     @BeforeEach
     void setUp() throws Exception {
+        ensureNormalUser();
         for (String[] credential : ADMIN_CREDENTIALS) {
             LoginRequest loginReq = new LoginRequest();
             loginReq.setPhone(credential[0]);
@@ -55,6 +74,28 @@ class AdminControllerTest {
             }
         }
         throw new RuntimeException("无法以管理员身份登录");
+    }
+
+    private void ensureNormalUser() {
+        User existingUser = userMapper.selectOne(new LambdaQueryWrapper<User>()
+                .eq(User::getPhone, NORMAL_USER_PHONE)
+                .last("limit 1"));
+        if (existingUser == null) {
+            User user = new User();
+            user.setPhone(NORMAL_USER_PHONE);
+            user.setPassword(passwordEncoder.encode(NORMAL_USER_PASSWORD));
+            user.setNickname("管理端测试普通用户");
+            user.setStatus(1);
+            userMapper.insert(user);
+
+            UserRole userRole = new UserRole();
+            userRole.setUserId(user.getId());
+            userRole.setRoleId(2L);
+            userRoleMapper.insert(userRole);
+            normalUserId = user.getId();
+            return;
+        }
+        normalUserId = existingUser.getId();
     }
 
     // ==================== 1. 订单列表 ====================
@@ -189,13 +230,13 @@ class AdminControllerTest {
         @Test
         @DisplayName("修改普通用户状态成功")
         void shouldToggleStatus() throws Exception {
-            mockMvc.perform(put("/api/admin/users/3/status")
+            mockMvc.perform(put("/api/admin/users/{id}/status", normalUserId)
                             .header("Authorization", "Bearer " + adminToken)
                             .param("status", "0"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value(200));
 
-            mockMvc.perform(put("/api/admin/users/3/status")
+            mockMvc.perform(put("/api/admin/users/{id}/status", normalUserId)
                             .header("Authorization", "Bearer " + adminToken)
                             .param("status", "1"))
                     .andExpect(status().isOk())
