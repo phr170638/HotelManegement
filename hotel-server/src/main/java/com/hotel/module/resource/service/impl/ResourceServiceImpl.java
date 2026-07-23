@@ -6,7 +6,6 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hotel.common.exception.BusinessException;
 import com.hotel.common.result.PageResult;
-import com.hotel.module.review.entity.Review;
 import com.hotel.module.review.mapper.ReviewMapper;
 import com.hotel.module.resource.dto.HotelSaveRequest;
 import com.hotel.module.resource.dto.RoomSaveRequest;
@@ -69,11 +68,10 @@ public class ResourceServiceImpl implements ResourceService {
     }
 
     @Override
-    @Transactional
     public void deleteCountry(Long id) {
         Long cityCount = cityMapper.selectCount(new LambdaQueryWrapper<City>().eq(City::getCountryId, id));
         if (cityCount != null && cityCount > 0) {
-            throw new BusinessException("当前国家下存在城市，无法删除");
+            throw new BusinessException(400, "该国家下仍有关联城市，无法删除");
         }
         countryMapper.deleteById(id);
     }
@@ -101,11 +99,10 @@ public class ResourceServiceImpl implements ResourceService {
     public void updateCity(City city) { cityMapper.updateById(city); }
 
     @Override
-    @Transactional
     public void deleteCity(Long id) {
         Long hotelCount = hotelMapper.selectCount(new LambdaQueryWrapper<Hotel>().eq(Hotel::getCityId, id));
         if (hotelCount != null && hotelCount > 0) {
-            throw new BusinessException("当前城市下存在酒店，无法删除");
+            throw new BusinessException(400, "该城市下仍有关联酒店，无法删除");
         }
         cityMapper.deleteById(id);
     }
@@ -244,11 +241,11 @@ public class ResourceServiceImpl implements ResourceService {
         for (Room room : rooms) {
             roomImageMapper.delete(new LambdaQueryWrapper<RoomImage>().eq(RoomImage::getRoomId, room.getId()));
             roomFacilityMapper.delete(new LambdaQueryWrapper<RoomFacility>().eq(RoomFacility::getRoomId, room.getId()));
-            roomMapper.deleteById(room.getId());
         }
-        reviewMapper.delete(new LambdaQueryWrapper<Review>().eq(Review::getHotelId, id));
+        roomMapper.delete(new LambdaQueryWrapper<Room>().eq(Room::getHotelId, id));
         hotelImageMapper.delete(new LambdaQueryWrapper<HotelImage>().eq(HotelImage::getHotelId, id));
         hotelFacilityMapper.delete(new LambdaQueryWrapper<HotelFacility>().eq(HotelFacility::getHotelId, id));
+        reviewMapper.delete(new LambdaQueryWrapper<com.hotel.module.review.entity.Review>().eq(com.hotel.module.review.entity.Review::getHotelId, id));
         hotelMapper.deleteById(id);
     }
 

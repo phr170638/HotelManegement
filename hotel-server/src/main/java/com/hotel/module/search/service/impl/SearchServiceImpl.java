@@ -20,9 +20,10 @@ import lombok.RequiredArgsConstructor;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -74,55 +75,45 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public List<HotelSearchVO> nearby(String longitude, String latitude, Integer radius) {
-        double targetLng = Double.parseDouble(longitude);
-        double targetLat = Double.parseDouble(latitude);
-        double maxDistanceKm = radius == null ? 5D : radius.doubleValue();
+        BigDecimal targetLongitude = new BigDecimal(longitude);
+        BigDecimal targetLatitude = new BigDecimal(latitude);
+        int radiusKm = radius == null ? 5 : radius;
 
-        List<Hotel> hotels = hotelMapper.selectList(new LambdaQueryWrapper<Hotel>()
-                .eq(Hotel::getStatus, 1)
-                .isNotNull(Hotel::getLongitude)
-                .isNotNull(Hotel::getLatitude));
-
-        return hotels.stream()
+        return hotelMapper.selectList(new LambdaQueryWrapper<Hotel>().eq(Hotel::getStatus, 1)).stream()
+                .filter(hotel -> hotel.getLongitude() != null && hotel.getLatitude() != null)
                 .filter(hotel -> calculateDistanceKm(
-                        targetLat,
-                        targetLng,
-                        hotel.getLatitude().doubleValue(),
-                        hotel.getLongitude().doubleValue()
-                ) <= maxDistanceKm)
-                .sorted(Comparator.comparingDouble(hotel -> calculateDistanceKm(
-                        targetLat,
-                        targetLng,
-                        hotel.getLatitude().doubleValue(),
-                        hotel.getLongitude().doubleValue()
-                )))
-                .map(h -> {
+                        targetLongitude.doubleValue(),
+                        targetLatitude.doubleValue(),
+                        hotel.getLongitude().doubleValue(),
+                        hotel.getLatitude().doubleValue()
+                ) <= radiusKm)
+                .map(hotel -> {
                     HotelSearchVO vo = new HotelSearchVO();
-                    vo.setId(h.getId());
-                    vo.setCityId(h.getCityId());
-                    vo.setNameCn(h.getNameCn());
-                    vo.setNameEn(h.getNameEn());
-                    vo.setStarLevel(h.getStarLevel());
-                    vo.setScore(h.getScore());
-                    vo.setAddress(h.getAddress());
-                    vo.setLongitude(h.getLongitude());
-                    vo.setLatitude(h.getLatitude());
-                    vo.setBrand(h.getBrand());
-                    enrichSearchSummary(vo, h);
+                    vo.setId(hotel.getId());
+                    vo.setCityId(hotel.getCityId());
+                    vo.setNameCn(hotel.getNameCn());
+                    vo.setNameEn(hotel.getNameEn());
+                    vo.setStarLevel(hotel.getStarLevel());
+                    vo.setScore(hotel.getScore());
+                    vo.setAddress(hotel.getAddress());
+                    vo.setLongitude(hotel.getLongitude());
+                    vo.setLatitude(hotel.getLatitude());
+                    vo.setBrand(hotel.getBrand());
+                    enrichSearchSummary(vo, hotel);
                     return vo;
                 })
                 .toList();
     }
 
-    private double calculateDistanceKm(double lat1, double lng1, double lat2, double lng2) {
+    private double calculateDistanceKm(double longitude1, double latitude1, double longitude2, double latitude2) {
         double earthRadiusKm = 6371.0;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLng = Math.toRadians(lng2 - lng1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        double latDistance = Math.toRadians(latitude2 - latitude1);
+        double lonDistance = Math.toRadians(longitude2 - longitude1);
+        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
+                + Math.cos(Math.toRadians(latitude1)) * Math.cos(Math.toRadians(latitude2))
+                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return earthRadiusKm * c;
+        return BigDecimal.valueOf(earthRadiusKm * c).setScale(3, RoundingMode.HALF_UP).doubleValue();
     }
 
     private void enrichSearchSummary(HotelSearchVO vo, Hotel hotel) {

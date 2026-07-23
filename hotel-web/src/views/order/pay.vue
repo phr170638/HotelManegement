@@ -25,9 +25,14 @@ async function submitPayment() {
 
   try {
     const data = await payOrder(orderId.value, { silent: true })
-    const payForm = data?.payForm
+    const payForm = typeof data?.payForm === 'string' ? data.payForm.trim() : ''
     if (!payForm) {
       throw new Error('支付表单生成失败')
+    }
+
+    if (/^https?:\/\//i.test(payForm)) {
+      window.location.href = payForm
+      return
     }
 
     const container = document.createElement('div')

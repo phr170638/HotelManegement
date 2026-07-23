@@ -12,7 +12,6 @@ import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +28,7 @@ public class MailServiceImpl implements MailService {
 
     private final JavaMailSender mailSender;
 
-    @Value("${spring.mail.username:}")
+    @Value("${spring.mail.username}")
     private String fromAddress;
 
     @Value("${app.notification.mail.from-name:酒店管理系统}")
@@ -60,11 +59,6 @@ public class MailServiceImpl implements MailService {
     }
 
     private void sendPlainTextMail(String email, String subject, String content, String errorMessage) {
-        if (!StringUtils.hasText(fromAddress) || !StringUtils.hasText(mailHost) || mailPort == null || mailPort <= 0) {
-            log.warn("Mail config missing, skip send mail: fromAddress={}, host={}, port={}, target={}, subject={}",
-                    fromAddress, mailHost, mailPort, email, subject);
-            return;
-        }
         MimeMessage message = mailSender.createMimeMessage();
         try {
             log.info("Mail send attempt: fromAddress={}, fromName={}, host={}, port={}, target={}",

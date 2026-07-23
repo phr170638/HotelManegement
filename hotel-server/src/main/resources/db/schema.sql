@@ -298,13 +298,13 @@ CREATE TABLE IF NOT EXISTS t_review (
 -- ============================================================
 
 -- 国家
-INSERT IGNORE INTO t_country (id, code, name_cn, name_en) VALUES
+INSERT INTO t_country (id, code, name_cn, name_en) VALUES
 (1, 'CN', '中国', 'China'),
 (2, 'JP', '日本', 'Japan'),
 (3, 'TH', '泰国', 'Thailand');
 
 -- 城市
-INSERT IGNORE INTO t_city (id, country_id, name_cn, name_en, code, hot) VALUES
+INSERT INTO t_city (id, country_id, name_cn, name_en, code, hot) VALUES
 (1, 1, '西安', 'Xi''an', 'XA', 1),
 (2, 1, '北京', 'Beijing', 'BJ', 1),
 (3, 1, '上海', 'Shanghai', 'SH', 1),
@@ -313,24 +313,24 @@ INSERT IGNORE INTO t_city (id, country_id, name_cn, name_en, code, hot) VALUES
 (6, 3, '曼谷', 'Bangkok', 'BKK', 1);
 
 -- 床型
-INSERT IGNORE INTO t_bed_type (id, name, code) VALUES
+INSERT INTO t_bed_type (id, name, code) VALUES
 (1, '大床', 'KING'),
 (2, '双床', 'TWIN'),
 (3, '单人床', 'SINGLE');
 
 -- 早餐
-INSERT IGNORE INTO t_breakfast (id, name) VALUES
+INSERT INTO t_breakfast (id, name) VALUES
 (1, '无早'),
 (2, '单早'),
 (3, '双早');
 
 -- 角色
-INSERT IGNORE INTO t_role (id, name, description) VALUES
+INSERT INTO t_role (id, name, description) VALUES
 (1, 'admin', '超级管理员'),
 (2, 'user', '普通用户');
 
 -- 权限
-INSERT IGNORE INTO t_permission (id, name, description) VALUES
+INSERT INTO t_permission (id, name, description) VALUES
 (1, '*:*', '全部权限'),
 (2, 'hotel:search', '酒店搜索'),
 (3, 'hotel:detail', '酒店详情'),
@@ -342,22 +342,21 @@ INSERT IGNORE INTO t_permission (id, name, description) VALUES
 (9, 'user:order', '我的订单');
 
 -- 角色-权限关联
-INSERT IGNORE INTO t_role_permission (role_id, permission_id) VALUES
+INSERT INTO t_role_permission (role_id, permission_id) VALUES
 (1, 1);  -- admin 拥有全部权限 (*:*)
 
-INSERT IGNORE INTO t_role_permission (role_id, permission_id) VALUES
+INSERT INTO t_role_permission (role_id, permission_id) VALUES
 (2, 2), (2, 3), (2, 4), (2, 5), (2, 6), (2, 7), (2, 8), (2, 9);
 
--- 管理员用户
-INSERT IGNORE INTO t_user (id, phone, email, password, nickname, status) VALUES
-(1, '17727974960', 'admin@hotel.com', '$2a$10$sW2vrKcSznSW6T7Nnmc0CenrVzscSkIoSjJrujdMu93gRPu1fsaoy', '系统管理员', 1),
-(2, '13800000000', 'admin2@hotel.com', '$2a$10$hvKRGAa3izteCsWtRLQ7Q.Vzp0uKoTcBRFmdXj7NQWC6D5ot97E5i', '默认管理员', 1);
+-- 管理员用户 (密码: ycj20050908, BCrypt加密)
+INSERT INTO t_user (id, phone, email, password, nickname, status) VALUES
+(1, '17727974960', 'admin@hotel.com', '$2a$10$sW2vrKcSznSW6T7Nnmc0CenrVzscSkIoSjJrujdMu93gRPu1fsaoy', '系统管理员', 1);
 
 -- 管理员角色分配
-INSERT IGNORE INTO t_user_role (user_id, role_id) VALUES (1, 1), (2, 1);
+INSERT INTO t_user_role (user_id, role_id) VALUES (1, 1);
 
 -- 示例优惠券（启动后会自动生成 receive_code）
-INSERT IGNORE INTO t_coupon (id, name, receive_code, description, discount_amount, threshold_amount, total_num, issue_num, per_user_limit, status, receive_start_time, receive_end_time, valid_start_time, valid_end_time) VALUES
+INSERT INTO t_coupon (id, name, receive_code, description, discount_amount, threshold_amount, total_num, issue_num, per_user_limit, status, receive_start_time, receive_end_time, valid_start_time, valid_end_time) VALUES
 (1, '新客立减券', NULL, '满 300 元可用，立减 50 元', 50.00, 300.00, 5000, 0, 1, 1, '2026-01-01 00:00:00', '2030-12-31 23:59:59', '2026-01-01 00:00:00', '2030-12-31 23:59:59'),
 (2, '周末精选券', NULL, '满 500 元可用，立减 80 元', 80.00, 500.00, 3000, 0, 2, 1, '2026-01-01 00:00:00', '2030-12-31 23:59:59', '2026-01-01 00:00:00', '2030-12-31 23:59:59');
 

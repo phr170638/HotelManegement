@@ -21,6 +21,7 @@ import com.hotel.module.payment.mq.PaymentSucceededMessage;
 import com.hotel.module.payment.service.AlipayService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -43,6 +44,7 @@ public class AlipayServiceImpl implements AlipayService {
     private final OrderMapper orderMapper;
     private final PaymentMapper paymentMapper;
     private final PaymentEventPublisher paymentEventPublisher;
+    private final Environment environment;
 
     @Override
     public Map<String, Object> createPagePay(Long orderId) {
@@ -72,7 +74,7 @@ public class AlipayServiceImpl implements AlipayService {
                     "product_code", "FAST_INSTANT_TRADE_PAY"
             )));
 
-            AlipayTradePagePayResponse response = buildClient().pageExecute(request, "GET");
+            AlipayTradePagePayResponse response = buildClient().pageExecute(request);
             if (!response.isSuccess() || !StringUtils.hasText(response.getBody())) {
                 throw new BusinessException("支付宝支付请求失败");
             }
@@ -82,7 +84,9 @@ public class AlipayServiceImpl implements AlipayService {
             result.put("payForm", response.getBody());
             return result;
         } catch (AlipayApiException e) {
-            throw new BusinessException("支付宝支付请求失败: " + e.getErrMsg());
+            log.error("alipay page pay failed: message={}, errMsg={}, cause={}",
+                    e.getMessage(), e.getErrMsg(), e.getCause(), e);
+            throw new BusinessException("支付宝支付请求失败: " + e.getMessage());
         }
     }
 
@@ -106,7 +110,9 @@ public class AlipayServiceImpl implements AlipayService {
                 throw new BusinessException("支付宝回调验签失败");
             }
         } catch (AlipayApiException e) {
-            throw new BusinessException("支付宝回调验签失败: " + e.getErrMsg());
+            log.error("alipay notify verify failed: message={}, errMsg={}, cause={}",
+                    e.getMessage(), e.getErrMsg(), e.getCause(), e);
+            throw new BusinessException("支付宝回调验签失败: " + e.getMessage());
         }
 
         String orderNo = params.get("out_trade_no");
@@ -187,7 +193,9 @@ public class AlipayServiceImpl implements AlipayService {
             );
             return true;
         } catch (AlipayApiException e) {
-            throw new BusinessException("支付宝支付结果查询失败: " + e.getErrMsg());
+            log.error("alipay query failed: message={}, errMsg={}, cause={}",
+                    e.getMessage(), e.getErrMsg(), e.getCause(), e);
+            throw new BusinessException("支付宝支付结果查询失败: " + e.getMessage());
         }
     }
 
@@ -265,6 +273,16 @@ public class AlipayServiceImpl implements AlipayService {
     }
 
     private void validateClientConfig() {
+        log.info("alipay config check: appIdPresent={}, privateKeyPresent={}, alipayPublicKeyPresent={}, gatewayUrl={}",
+                hasRealConfig(alipayConfig.getAppId()),
+                hasRealConfig(alipayConfig.getPrivateKey()),
+                hasRealConfig(alipayConfig.getAlipayPublicKey()),
+                alipayConfig.getGatewayUrl());
+        log.info("alipay env check: appIdPresent={}, privateKeyPresent={}, alipayPublicKeyPresent={}, gatewayUrl={}",
+                hasRealConfig(environment.getProperty("alipay.app-id")),
+                hasRealConfig(environment.getProperty("alipay.private-key")),
+                hasRealConfig(environment.getProperty("alipay.alipay-public-key")),
+                environment.getProperty("alipay.gateway-url"));
         if (!hasRealConfig(alipayConfig.getAppId())
                 || !hasRealConfig(alipayConfig.getPrivateKey())
                 || !hasRealConfig(alipayConfig.getAlipayPublicKey())
