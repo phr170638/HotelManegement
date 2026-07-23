@@ -28,7 +28,7 @@ public class MailServiceImpl implements MailService {
 
     private final JavaMailSender mailSender;
 
-    @Value("${spring.mail.username}")
+    @Value("${spring.mail.username:}")
     private String fromAddress;
 
     @Value("${app.notification.mail.from-name:酒店管理系统}")
@@ -59,6 +59,11 @@ public class MailServiceImpl implements MailService {
     }
 
     private void sendPlainTextMail(String email, String subject, String content, String errorMessage) {
+        if (fromAddress == null || fromAddress.isBlank() || mailHost == null || mailHost.isBlank()) {
+            log.warn("Mail config incomplete, skip sending mail: fromAddress={}, host={}, target={}, subject={}",
+                    fromAddress, mailHost, email, subject);
+            return;
+        }
         MimeMessage message = mailSender.createMimeMessage();
         try {
             log.info("Mail send attempt: fromAddress={}, fromName={}, host={}, port={}, target={}",

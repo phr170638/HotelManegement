@@ -301,7 +301,8 @@ CREATE TABLE IF NOT EXISTS t_review (
 INSERT INTO t_country (id, code, name_cn, name_en) VALUES
 (1, 'CN', '中国', 'China'),
 (2, 'JP', '日本', 'Japan'),
-(3, 'TH', '泰国', 'Thailand');
+(3, 'TH', '泰国', 'Thailand')
+ON DUPLICATE KEY UPDATE code = VALUES(code), name_cn = VALUES(name_cn), name_en = VALUES(name_en);
 
 -- 城市
 INSERT INTO t_city (id, country_id, name_cn, name_en, code, hot) VALUES
@@ -310,24 +311,28 @@ INSERT INTO t_city (id, country_id, name_cn, name_en, code, hot) VALUES
 (3, 1, '上海', 'Shanghai', 'SH', 1),
 (4, 1, '成都', 'Chengdu', 'CD', 1),
 (5, 2, '东京', 'Tokyo', 'TYO', 1),
-(6, 3, '曼谷', 'Bangkok', 'BKK', 1);
+(6, 3, '曼谷', 'Bangkok', 'BKK', 1)
+ON DUPLICATE KEY UPDATE country_id = VALUES(country_id), name_cn = VALUES(name_cn), name_en = VALUES(name_en), code = VALUES(code), hot = VALUES(hot);
 
 -- 床型
 INSERT INTO t_bed_type (id, name, code) VALUES
 (1, '大床', 'KING'),
 (2, '双床', 'TWIN'),
-(3, '单人床', 'SINGLE');
+(3, '单人床', 'SINGLE')
+ON DUPLICATE KEY UPDATE name = VALUES(name), code = VALUES(code);
 
 -- 早餐
 INSERT INTO t_breakfast (id, name) VALUES
 (1, '无早'),
 (2, '单早'),
-(3, '双早');
+(3, '双早')
+ON DUPLICATE KEY UPDATE name = VALUES(name);
 
 -- 角色
 INSERT INTO t_role (id, name, description) VALUES
 (1, 'admin', '超级管理员'),
-(2, 'user', '普通用户');
+(2, 'user', '普通用户')
+ON DUPLICATE KEY UPDATE name = VALUES(name), description = VALUES(description);
 
 -- 权限
 INSERT INTO t_permission (id, name, description) VALUES
@@ -339,26 +344,32 @@ INSERT INTO t_permission (id, name, description) VALUES
 (6, 'order:refund', '退房申请'),
 (7, 'review:create', '发表评价'),
 (8, 'user:info', '用户信息'),
-(9, 'user:order', '我的订单');
+(9, 'user:order', '我的订单')
+ON DUPLICATE KEY UPDATE name = VALUES(name), description = VALUES(description);
 
 -- 角色-权限关联
-INSERT INTO t_role_permission (role_id, permission_id) VALUES
+INSERT IGNORE INTO t_role_permission (role_id, permission_id) VALUES
 (1, 1);  -- admin 拥有全部权限 (*:*)
 
-INSERT INTO t_role_permission (role_id, permission_id) VALUES
+INSERT IGNORE INTO t_role_permission (role_id, permission_id) VALUES
 (2, 2), (2, 3), (2, 4), (2, 5), (2, 6), (2, 7), (2, 8), (2, 9);
 
 -- 管理员用户 (密码: ycj20050908, BCrypt加密)
 INSERT INTO t_user (id, phone, email, password, nickname, status) VALUES
-(1, '17727974960', 'admin@hotel.com', '$2a$10$sW2vrKcSznSW6T7Nnmc0CenrVzscSkIoSjJrujdMu93gRPu1fsaoy', '系统管理员', 1);
+(1, '17727974960', 'admin@hotel.com', '$2a$10$sW2vrKcSznSW6T7Nnmc0CenrVzscSkIoSjJrujdMu93gRPu1fsaoy', '系统管理员', 1)
+ON DUPLICATE KEY UPDATE phone = VALUES(phone), email = VALUES(email), password = VALUES(password), nickname = VALUES(nickname), status = VALUES(status);
 
 -- 管理员角色分配
-INSERT INTO t_user_role (user_id, role_id) VALUES (1, 1);
+INSERT IGNORE INTO t_user_role (user_id, role_id) VALUES (1, 1);
 
 -- 示例优惠券（启动后会自动生成 receive_code）
 INSERT INTO t_coupon (id, name, receive_code, description, discount_amount, threshold_amount, total_num, issue_num, per_user_limit, status, receive_start_time, receive_end_time, valid_start_time, valid_end_time) VALUES
 (1, '新客立减券', NULL, '满 300 元可用，立减 50 元', 50.00, 300.00, 5000, 0, 1, 1, '2026-01-01 00:00:00', '2030-12-31 23:59:59', '2026-01-01 00:00:00', '2030-12-31 23:59:59'),
-(2, '周末精选券', NULL, '满 500 元可用，立减 80 元', 80.00, 500.00, 3000, 0, 2, 1, '2026-01-01 00:00:00', '2030-12-31 23:59:59', '2026-01-01 00:00:00', '2030-12-31 23:59:59');
+(2, '周末精选券', NULL, '满 500 元可用，立减 80 元', 80.00, 500.00, 3000, 0, 2, 1, '2026-01-01 00:00:00', '2030-12-31 23:59:59', '2026-01-01 00:00:00', '2030-12-31 23:59:59')
+ON DUPLICATE KEY UPDATE name = VALUES(name), description = VALUES(description), discount_amount = VALUES(discount_amount),
+threshold_amount = VALUES(threshold_amount), total_num = VALUES(total_num), issue_num = VALUES(issue_num),
+per_user_limit = VALUES(per_user_limit), status = VALUES(status), receive_start_time = VALUES(receive_start_time),
+receive_end_time = VALUES(receive_end_time), valid_start_time = VALUES(valid_start_time), valid_end_time = VALUES(valid_end_time);
 
 SELECT id, name, receive_code, total_num, issue_num, per_user_limit, status
 FROM t_coupon;
